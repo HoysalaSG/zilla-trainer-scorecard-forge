@@ -1,11 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
   Award,
-  Check,
   ChevronLeft,
   Download,
   FileSpreadsheet,
@@ -37,7 +36,6 @@ import {
   type EditableField,
   type GradedParticipant,
   type Participant,
-  type Recommendation,
 } from "@/lib/grading";
 import { createGradingDataProvider, toAssessmentDraft } from "@/lib/grading-data-provider";
 
