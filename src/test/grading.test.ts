@@ -31,7 +31,10 @@ describe("T3 grading rules", () => {
       "Appreciation of the goal of the program", "In class participation", "Inner Confidence",
       "Appreciation and willingness to follow process",
     ] as const;
-    fields.forEach((field, index) => { participant[field] = values[index]; });
+    fields.forEach((field, index) => {
+      const value = values[index];
+      if (value !== undefined) participant[field] = value;
+    });
     expect(gradeParticipant(participant)).toMatchObject({ Score: score, "Internal Grade": grade });
   });
 
