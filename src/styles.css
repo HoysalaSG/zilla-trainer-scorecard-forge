@@ -142,3 +142,31 @@
     color: var(--color-foreground);
   }
 }
+
+.grading-sheet thead {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+
+.grading-sheet .group-header-cell {
+  height: 25px;
+  position: sticky;
+  top: 0;
+  z-index: 45;
+}
+
+.grading-sheet .column-header-row th {
+  position: sticky;
+  top: 25px;
+  z-index: 44;
+}
+
+.grading-sheet .column-header-row th:nth-child(3) {
+  left: 0;
+  z-index: 55;
+}
+
+.grading-sheet tbody td:nth-child(3) {
+  left: 0;
+}

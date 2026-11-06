@@ -1,14 +1,7 @@
-import { createDemoParticipants, type Participant } from "@/lib/grading";
+import { createDemoParticipants, type DimensionField, type DimensionValue, type Participant } from "@/lib/grading";
 
 export type AssessmentDraft = Pick<Participant, "id"> & {
-  dimensions: Record<keyof Pick<Participant,
-    | "Clarity of Ideas"
-    | "Ability to involve the class and listen to participation"
-    | "Appreciation of the goal of the program"
-    | "In class participation"
-    | "Inner Confidence"
-    | "Appreciation and willingness to follow process"
-  >, string>;
+  dimensions: Record<DimensionField, DimensionValue>;
   Recommendation: Participant["Recommendation"];
   Comments: string;
 };

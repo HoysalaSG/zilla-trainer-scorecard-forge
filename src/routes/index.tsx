@@ -1,11 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
   Award,
-  Check,
   ChevronLeft,
   Download,
   FileSpreadsheet,
@@ -37,7 +36,6 @@ import {
   type EditableField,
   type GradedParticipant,
   type Participant,
-  type Recommendation,
 } from "@/lib/grading";
 import { createGradingDataProvider, toAssessmentDraft } from "@/lib/grading-data-provider";
 
@@ -409,35 +407,35 @@ function Index() {
                   return (
                     <tr key={participant.id} className={`group border-b border-border ${dirtyRowIds.has(participant.id) ? "bg-accent/45" : rowIndex % 2 === 0 ? "bg-background" : "bg-muted/25"}`}>
                       {COLUMN_ORDER.map((column, index) => {
-                        if (column === "Sr no.") return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border px-2 py-2 text-center tabular-nums text-muted-foreground`}><span className="inline-flex items-center gap-1" title={status.label}><span className={`size-1.5 rounded-full ${status.dot}`} />{participant["Sr no."]}</span></td>;
-                        if (column === "Name") return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border px-2 py-2`}><div className="max-w-[160px] truncate font-medium" title={participant.Name}>{participant.Name}</div><div className={`mt-0.5 text-[9px] ${status.text}`}>{status.label}{dirtyRowIds.has(participant.id) ? " · Unsaved" : ""}</div></td>;
+                        if (column === "Sr no.") return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border px-2 py-1 text-center tabular-nums text-muted-foreground`}><span className="inline-flex items-center gap-1" title={status.label}><span className={`size-1.5 rounded-full ${status.dot}`} />{participant["Sr no."]}</span></td>;
+                        if (column === "Name") return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border px-2 py-1`}><div className="max-w-[160px] truncate font-medium" title={participant.Name}>{participant.Name}</div><div className={`text-[9px] ${status.text}`}>{status.label}{dirtyRowIds.has(participant.id) ? " · Unsaved" : ""}</div></td>;
                         if (DIMENSION_FIELDS.includes(column as DimensionField)) {
                           const field = column as DimensionField;
                           const error = errors[`${participant.id}::${field}`];
-                          return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border px-1.5 py-1.5 align-top`}>
-                            <Input id={cellId(participant.id, index)} aria-label={`${participant.Name}, ${field}`} aria-invalid={Boolean(error)} title={field} value={participant[field]} placeholder="·" onChange={(event) => handleCellValue(participant.id, field, event.target.value)} onPaste={(event) => { const text = event.clipboardData.getData("text"); if (pasteGrid(participant.id, field, text)) event.preventDefault(); }} onKeyDown={(event) => handleGridKey(event, filteredRows, rowIndex, participant.id, field)} className={`h-7 w-full min-w-12 rounded-sm px-1 text-center text-xs tabular-nums shadow-none ${error ? "border-destructive ring-1 ring-destructive" : "border-transparent bg-muted/45 focus-visible:border-ring"}`} />
+                          return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border px-1.5 py-1 align-top`}>
+                            <Input id={cellId(participant.id, index)} aria-label={`${participant.Name}, ${field}`} aria-invalid={Boolean(error)} title={field} value={participant[field]} placeholder="·" onChange={(event) => handleCellValue(participant.id, field, event.target.value)} onPaste={(event) => { const text = event.clipboardData.getData("text"); if (pasteGrid(participant.id, field, text)) event.preventDefault(); }} onKeyDown={(event) => handleGridKey(event, filteredRows, rowIndex, field)} className={`h-6 w-full min-w-12 rounded-sm px-1 text-center text-xs tabular-nums shadow-none ${error ? "border-destructive ring-1 ring-destructive" : "border-transparent bg-muted/45 focus-visible:border-ring"}`} />
                             {error && <span className="mt-1 block min-w-28 text-[9px] leading-tight text-destructive" role="alert">{error}</span>}
                           </td>;
                         }
-                        if (column === "Score") return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border bg-muted/30 px-2 py-2 text-center font-semibold tabular-nums`}>{graded.Score === "" ? <span className="text-muted-foreground">—</span> : graded.Score}</td>;
-                        if (column === "Internal Grade") return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border bg-muted/30 px-2 py-2 text-center`}><GradeBadge grade={graded["Internal Grade"]} /></td>;
+                        if (column === "Score") return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border bg-muted/30 px-2 py-1 text-center font-semibold tabular-nums`}>{graded.Score === "" ? <span className="text-muted-foreground">—</span> : graded.Score}</td>;
+                        if (column === "Internal Grade") return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border bg-muted/30 px-2 py-1 text-center`}><GradeBadge grade={graded["Internal Grade"]} /></td>;
                         if (column === "Recommendation") {
                           const error = errors[`${participant.id}::Recommendation`];
-                          return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border px-1.5 py-1.5 align-top`}>
+                          return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border px-1.5 py-1 align-top`}>
                             <Select value={participant.Recommendation || "__blank__"} onValueChange={(value) => handleCellValue(participant.id, "Recommendation", value === "__blank__" ? "" : value)}>
-                              <SelectTrigger id={cellId(participant.id, index)} aria-label={`${participant.Name}, Recommendation`} aria-invalid={Boolean(error)} onKeyDown={(event) => handleGridKey(event, filteredRows, rowIndex, participant.id, "Recommendation")} className={`h-7 w-[158px] rounded-sm px-1.5 text-[10px] shadow-none ${error ? "border-destructive" : "border-transparent bg-muted/45"}`}><SelectValue /></SelectTrigger>
+                              <SelectTrigger id={cellId(participant.id, index)} aria-label={`${participant.Name}, Recommendation`} aria-invalid={Boolean(error)} onKeyDown={(event) => handleGridKey(event, filteredRows, rowIndex, "Recommendation")} className={`h-6 w-[158px] rounded-sm px-1.5 text-[10px] shadow-none ${error ? "border-destructive" : "border-transparent bg-muted/45"}`}><SelectValue /></SelectTrigger>
                               <SelectContent><SelectItem value="__blank__">—</SelectItem><SelectItem value="Recommended as MT">Recommended as MT</SelectItem><SelectItem value="Not Recommended as MT">Not Recommended as MT</SelectItem></SelectContent>
                             </Select>
                             {error && <span className="mt-1 block text-[9px] text-destructive" role="alert">{error}</span>}
                           </td>;
                         }
-                        if (column === "Comments") return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border px-1.5 py-1.5`}>
-                          <Button id={cellId(participant.id, index)} variant="ghost" size="sm" title={participant.Comments || "Add comments"} aria-label={`${participant.Name}, Comments`} onClick={() => openNotes(participant)} onPaste={(event) => { const text = event.clipboardData.getData("text"); if (pasteGrid(participant.id, "Comments", text)) event.preventDefault(); }} onKeyDown={(event) => handleGridKey(event, filteredRows, rowIndex, participant.id, "Comments")} className="h-7 w-full min-w-44 justify-start gap-1.5 overflow-hidden rounded-sm px-1.5 text-[10px] font-normal">
+                        if (column === "Comments") return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border px-1.5 py-1`}>
+                          <Button id={cellId(participant.id, index)} variant="ghost" size="sm" title={participant.Comments || "Add comments"} aria-label={`${participant.Name}, Comments`} onClick={() => openNotes(participant)} onPaste={(event) => { const text = event.clipboardData.getData("text"); if (pasteGrid(participant.id, "Comments", text)) event.preventDefault(); }} onKeyDown={(event) => handleGridKey(event, filteredRows, rowIndex, "Comments")} className="h-6 w-full min-w-44 justify-start gap-1.5 overflow-hidden rounded-sm px-1.5 text-[10px] font-normal">
                             <MessageSquareText className="size-3 shrink-0 text-muted-foreground" /><span className="truncate text-muted-foreground">{participant.Comments || "Add comment…"}</span>
                           </Button>
                         </td>;
                         const value = participant[column as keyof Participant];
-                        return <td key={column} className={`${frozenClasses(index, false)} max-w-44 truncate border-b border-r border-border px-2 py-2 text-muted-foreground`} title={String(value ?? "")}>{value || "—"}</td>;
+                        return <td key={column} className={`${frozenClasses(index, false)} max-w-44 truncate border-b border-r border-border px-2 py-1 text-muted-foreground`} title={String(value ?? "")}>{value || "—"}</td>;
                       })}
                     </tr>
                   );
@@ -570,9 +568,8 @@ function columnWidth(column: string, index: number) {
 }
 
 function frozenClasses(index: number, header: boolean) {
-  if (index > 2) return "";
-  const left = index === 0 ? "left-0" : index === 1 ? "left-[58px]" : "left-[163px]";
-  return `sticky ${left} ${header ? "z-30" : "z-10"} bg-inherit`;
+  if (index !== 2) return "";
+  return `sticky left-0 ${header ? "z-50" : "z-20"} bg-inherit`;
 }
 
 function cellId(id: string, columnIndex: number) {
@@ -580,10 +577,9 @@ function cellId(id: string, columnIndex: number) {
 }
 
 function handleGridKey(
-  event: React.KeyboardEvent<HTMLInputElement | HTMLButtonElement>,
+  event: ReactKeyboardEvent<HTMLInputElement | HTMLButtonElement>,
   rows: Participant[],
   rowIndex: number,
-  participantId: string,
   field: EditableField,
 ) {
   if (event.key === "Enter") {
@@ -597,5 +593,4 @@ function handleGridKey(
   if (!nextRow) return;
   event.preventDefault();
   document.getElementById(cellId(nextRow.id, fieldColumnIndex(field)))?.focus();
-  void participantId;
 }

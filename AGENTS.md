@@ -28,3 +28,5 @@ use the editor.
   own key and store it in Secrets.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
+
+Keep grading calculations and the browser-swappable data provider in shared `src/lib` modules so scoring stays consistent and demo storage can be replaced cleanly.
