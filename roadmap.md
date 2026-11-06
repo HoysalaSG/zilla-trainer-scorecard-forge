@@ -1,3 +1,4 @@
 - [ ] Build demo login and grading workspace for Zilla T3 Master Trainer participants.
+- [ ] Freeze only the table header, unfreeze the first two columns, and reduce row height.
 - [ ] Verify table order, grading rules, editing, persistence, navigation, and Excel export.
 - [ ] Check current diagnostics and review this roadmap before reporting completion.
