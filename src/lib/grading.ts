@@ -99,7 +99,15 @@ export function gradeParticipant(participant: Participant): GradedParticipant {
 }
 
 export function createDemoParticipants(): Participant[] {
-  const seedRows = [
+  const seedRows: {
+    name: string;
+    userId: string;
+    division: string;
+    district: string;
+    taluka: string;
+    batch: string;
+    dimensions: [DimensionValue, DimensionValue, DimensionValue, DimensionValue, DimensionValue, DimensionValue];
+  }[] = [
     { name: "Anita Deshmukh", userId: "MT-24031", division: "Pune", district: "Satara", taluka: "Karad", batch: "T3 Pune · May 2026", dimensions: ["", "", "", "", "", ""] },
     { name: "Rahul Patil", userId: "MT-24032", division: "Pune", district: "Pune", taluka: "Haveli", batch: "T3 Pune · May 2026", dimensions: ["0", "0", "0", "0", "0", "0"] },
     { name: "Meera Kulkarni", userId: "MT-24033", division: "Konkan", district: "Ratnagiri", taluka: "Chiplun", batch: "T3 Konkan · Jun 2026", dimensions: ["5", "5", "5", "5", "4", "5"] },
@@ -109,7 +117,7 @@ export function createDemoParticipants(): Participant[] {
     { name: "Pooja More", userId: "MT-24037", division: "Amravati", district: "Amravati", taluka: "Achalpur", batch: "T3 Vidarbha · Jul 2026", dimensions: ["-", "", "", "", "", ""] },
   ] as const;
 
-  return seedRows.map((row, index) => ({
+  return seedRows.map((row, index): Participant => ({
     id: row.userId,
     "Sr no.": index + 1,
     userId: row.userId,
@@ -132,12 +140,12 @@ export function createDemoParticipants(): Participant[] {
     "MT Assessment 2": `${74 + index * 3}%`,
     "Cognitive Pre": `${54 + index * 3}%`,
     "Cognitive Post": `${68 + index * 3}%`,
-    "Clarity of Ideas": row.dimensions[0] as DimensionValue,
-    "Ability to involve the class and listen to participation": row.dimensions[1] as DimensionValue,
-    "Appreciation of the goal of the program": row.dimensions[2] as DimensionValue,
-    "In class participation": row.dimensions[3] as DimensionValue,
-    "Inner Confidence": row.dimensions[4] as DimensionValue,
-    "Appreciation and willingness to follow process": row.dimensions[5] as DimensionValue,
+    "Clarity of Ideas": row.dimensions[0],
+    "Ability to involve the class and listen to participation": row.dimensions[1],
+    "Appreciation of the goal of the program": row.dimensions[2],
+    "In class participation": row.dimensions[3],
+    "Inner Confidence": row.dimensions[4],
+    "Appreciation and willingness to follow process": row.dimensions[5],
     Recommendation: "" as Recommendation,
     Comments: "",
   }));
