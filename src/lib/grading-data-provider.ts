@@ -2,6 +2,7 @@ import { createDemoParticipants, type DimensionField, type DimensionValue, type 
 
 export type AssessmentDraft = Pick<Participant, "id"> & {
   dimensions: Record<DimensionField, DimensionValue>;
+  "Participation Status": Participant["Participation Status"];
   Recommendation: Participant["Recommendation"];
   Comments: string;
 };
@@ -25,7 +26,9 @@ export function createGradingDataProvider(storage: Pick<Storage, "getItem" | "se
         const saved = JSON.parse(serialized) as AssessmentDraft[];
         return participants.map((participant) => {
           const draft = saved.find((item) => item.id === participant.id);
-          return draft ? { ...participant, ...draft.dimensions, Recommendation: draft.Recommendation, Comments: draft.Comments } : participant;
+          return draft ? { ...participant, ...draft.dimensions,
+            "Participation Status": draft["Participation Status"] ?? participant["Participation Status"],
+            Recommendation: draft.Recommendation, Comments: draft.Comments } : participant;
         });
       } catch {
         return participants;
@@ -49,5 +52,6 @@ export function toAssessmentDraft(participant: Participant): AssessmentDraft {
     "Inner Confidence": participant["Inner Confidence"],
     "Appreciation and willingness to follow process": participant["Appreciation and willingness to follow process"],
   };
-  return { id: participant.id, dimensions, Recommendation: participant.Recommendation, Comments: participant.Comments };
+  return { id: participant.id, dimensions, "Participation Status": participant["Participation Status"],
+    Recommendation: participant.Recommendation, Comments: participant.Comments };
 }

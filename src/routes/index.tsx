@@ -4,21 +4,19 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
-  Award,
   ChevronLeft,
+  ChevronRight,
   Download,
   FileSpreadsheet,
   Filter,
+  Layers3,
   LogOut,
   MessageSquareText,
-  RotateCcw,
-  Save,
   Search,
   ShieldAlert,
   Users,
 } from "lucide-react";
 
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -30,10 +28,13 @@ import {
   DIMENSION_FIELDS,
   EDITABLE_FIELDS,
   fieldColumnIndex,
+  gradeDistribution,
   gradeParticipant,
+  GRADES,
   isDimensionValue,
   type DimensionField,
   type EditableField,
+  type Grade,
   type GradedParticipant,
   type Participant,
 } from "@/lib/grading";
@@ -53,47 +54,52 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-const DEMO_STORAGE_NOTICE = "Demo storage · this browser only";
+const AUTOSAVE_NOTICE = "Edits autosave here, even if you close the tab";
 const NO_FILTER = "__all__";
+const ASSESSMENT_STATUSES = ["Graded", "Ungraded", "Absent"] as const;
+const PAGE_SIZE = 50;
 
 type SortConfig = { field: string; direction: "asc" | "desc" } | null;
-type Filters = { Division: string; District: string; Taluka: string; batchName: string };
+type Filters = { District: string; Taluka: string };
 
 function Index() {
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
-  const [loginStep, setLoginStep] = useState<"phone" | "otp" | "workspace">("phone");
+  const [loginStep, setLoginStep] = useState<"phone" | "otp" | "batch" | "workspace">("phone");
+  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
-  const savedParticipantsRef = useRef<Participant[]>([]);
+  const participantsRef = useRef<Participant[]>([]);
+  const providerRef = useRef<ReturnType<typeof createGradingDataProvider> | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [batchFilter, setBatchFilter] = useState(NO_FILTER);
-  const [filters, setFilters] = useState<Filters>({ Division: NO_FILTER, District: NO_FILTER, Taluka: NO_FILTER, batchName: NO_FILTER });
+  const [filters, setFilters] = useState<Filters>({ District: NO_FILTER, Taluka: NO_FILTER });
+  const [assessmentStatus, setAssessmentStatus] = useState<string>(NO_FILTER);
   const [sort, setSort] = useState<SortConfig>(null);
+  const [page, setPage] = useState(1);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [feedback, setFeedback] = useState("");
-  const [discardOpen, setDiscardOpen] = useState(false);
   const [noteTarget, setNoteTarget] = useState<Participant | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteOpen, setNoteOpen] = useState(false);
-  const [confirmLogout, setConfirmLogout] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
+  const isAuthenticated = loginStep === "batch" || loginStep === "workspace";
 
   useEffect(() => {
     const authenticated = window.sessionStorage.getItem("zilla-t3-demo-auth") === "yes";
-    if (authenticated) setLoginStep("workspace");
+    if (authenticated) setLoginStep("batch");
     setSessionReady(true);
   }, []);
 
   useEffect(() => {
-    if (loginStep !== "workspace") return;
+    if (!isAuthenticated) return;
     let active = true;
     setLoading(true);
     const provider = createGradingDataProvider(window.localStorage);
+    providerRef.current = provider;
     provider.loadParticipants().then((loaded) => {
       if (!active) return;
       setParticipants(loaded);
-      savedParticipantsRef.current = structuredClone(loaded);
+      participantsRef.current = loaded;
       setLoading(false);
     }).catch(() => {
       if (active) {
@@ -103,42 +109,23 @@ function Index() {
       }
     });
     return () => { active = false; };
-  }, [loginStep]);
+  }, [isAuthenticated]);
 
-  const dirtyRowIds = useMemo(() => {
-    const dirty = new Set<string>();
-    for (const participant of participants) {
-      const before = savedParticipantsRef.current.find((row) => row.id === participant.id);
-      if (before && EDITABLE_FIELDS.some((field) => before[field] !== participant[field])) dirty.add(participant.id);
-    }
-    return dirty;
-  }, [participants]);
-
-  useEffect(() => {
-    if (!dirtyRowIds.size) return;
-    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", warnBeforeLeaving);
-    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
-  }, [dirtyRowIds.size]);
-
-  const completedCount = useMemo(
-    () => participants.filter((row) => {
-      const grade = gradeParticipant(row)["Internal Grade"];
-      return grade !== "" && grade !== "Absent";
-    }).length,
-    [participants],
-  );
+  const batches = useMemo(() => [...new Set(participants.map((row) => row.batchId))].map((id) => {
+    const rows = participants.filter((row) => row.batchId === id);
+    return { id, name: rows[0]?.batchName ?? id, rows };
+  }), [participants]);
+  const selectedBatch = batches.find((batch) => batch.id === selectedBatchId);
+  const batchRows = useMemo(() => participants.filter((row) => row.batchId === selectedBatchId), [participants, selectedBatchId]);
+  const distribution = gradeDistribution(batchRows);
 
   const filteredRows = useMemo(() => {
     const term = search.trim().toLowerCase();
-    const visible = participants.filter((row) => {
+    const visible = batchRows.filter((row) => {
       const matchesSearch = !term || [row.Name, row.userId, row.phone].some((value) => value.toLowerCase().includes(term));
-      const matchesBatch = batchFilter === NO_FILTER || row.batchName === batchFilter;
       const matchesGeography = (Object.keys(filters) as (keyof Filters)[]).every((key) => filters[key] === NO_FILTER || row[key] === filters[key]);
-      return matchesSearch && matchesBatch && matchesGeography;
+      const matchesStatus = assessmentStatus === NO_FILTER || participantStatus(row).label === assessmentStatus;
+      return matchesSearch && matchesGeography && matchesStatus;
     });
     if (!sort) return visible;
     const valueFor = (row: Participant, field: string) => {
@@ -153,24 +140,39 @@ function Index() {
         : String(left ?? "").localeCompare(String(right ?? ""), undefined, { numeric: true, sensitivity: "base" });
       return sort.direction === "asc" ? comparison : -comparison;
     });
-  }, [batchFilter, filters, participants, search, sort]);
+  }, [assessmentStatus, batchRows, filters, search, sort]);
+
+  useEffect(() => { setPage(1); }, [assessmentStatus, filters, search, selectedBatchId]);
+  const pageCount = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const visibleRows = filteredRows.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  const persistParticipants = useCallback((next: Participant[]) => {
+    participantsRef.current = next;
+    setParticipants(next);
+    setFeedback("");
+    const provider = providerRef.current;
+    if (!provider) { setFeedback("Autosave is unavailable. Your change is only on screen."); return; }
+    void provider.saveDrafts(next.map(toAssessmentDraft)).catch(() => {
+      setFeedback("Autosave failed. Your change is only on screen; please try again.");
+    });
+  }, []);
 
   const updateField = useCallback((id: string, field: EditableField, value: string) => {
-    setParticipants((current) => current.map((row) => row.id === id ? { ...row, [field]: value } : row));
+    persistParticipants(participantsRef.current.map((row) => row.id === id ? { ...row, [field]: value } : row));
     setErrors((current) => {
       const next = { ...current };
       delete next[`${id}::${field}`];
       return next;
     });
-    setFeedback("");
-  }, []);
+  }, [persistParticipants]);
 
   const handleCellValue = useCallback((id: string, field: EditableField, rawValue: string) => {
-    const valid = field === "Recommendation"
-      ? rawValue === "" || rawValue === "Recommended as MT" || rawValue === "Not Recommended as MT"
+    const valid = field === "Participation Status" ? rawValue === "Present" || rawValue === "Absent"
+      : field === "Recommendation" ? rawValue === "" || rawValue === "Recommended as MT" || rawValue === "Not Recommended as MT"
       : field === "Comments" || isDimensionValue(rawValue);
     if (!valid) {
-      setErrors((current) => ({ ...current, [`${id}::${field}`]: field === "Recommendation" ? "Choose one of the listed options." : "Enter a whole number from 0–5, or – for absent." }));
+      setErrors((current) => ({ ...current, [`${id}::${field}`]: field === "Participation Status" ? "Choose Present or Absent." : field === "Recommendation" ? "Choose one of the listed options." : "Enter a whole number from 0–5, or – for absent." }));
       return;
     }
     updateField(id, field, rawValue);
@@ -179,7 +181,7 @@ function Index() {
   const pasteGrid = useCallback((startRowId: string, startField: EditableField, text: string) => {
     const grid = text.replace(/\r/g, "").split("\n").map((line) => line.split("\t"));
     if (grid.length === 1 && grid[0]?.length === 1) return false;
-    const startRowIndex = filteredRows.findIndex((row) => row.id === startRowId);
+    const startRowIndex = visibleRows.findIndex((row) => row.id === startRowId);
     const startColumnIndex = fieldColumnIndex(startField);
     let accepted = 0;
     let invalid = 0;
@@ -187,19 +189,20 @@ function Index() {
     const updates: { id: string; field: EditableField; value: string }[] = [];
 
     grid.forEach((line, rowOffset) => {
-      const row = filteredRows[startRowIndex + rowOffset];
+      const row = visibleRows[startRowIndex + rowOffset];
       if (!row) return;
       line.forEach((raw, colOffset) => {
         const fieldName = COLUMN_ORDER[startColumnIndex + colOffset];
         if (!fieldName || !EDITABLE_FIELDS.includes(fieldName as EditableField)) return;
         const field = fieldName as EditableField;
         const value = raw.trim();
-        const valid = field === "Recommendation"
+        const valid = field === "Participation Status" ? value === "Present" || value === "Absent"
+          : field === "Recommendation"
           ? value === "" || value === "Recommended as MT" || value === "Not Recommended as MT"
           : field === "Comments" || isDimensionValue(value);
         if (!valid) {
           invalid += 1;
-          invalidCells[`${row.id}::${field}`] = field === "Recommendation" ? "Choose one of the listed options." : "Enter a whole number from 0–5, or – for absent.";
+          invalidCells[`${row.id}::${field}`] = field === "Participation Status" ? "Choose Present or Absent." : field === "Recommendation" ? "Choose one of the listed options." : "Enter a whole number from 0–5, or – for absent.";
           return;
         }
         accepted += 1;
@@ -207,10 +210,11 @@ function Index() {
       });
     });
 
-    setParticipants((current) => current.map((row) => {
+    const next = participantsRef.current.map((row) => {
       const values = updates.filter((update) => update.id === row.id);
       return values.reduce((next, update) => ({ ...next, [update.field]: update.value }), row);
-    }));
+    });
+    if (updates.length) persistParticipants(next);
     setErrors((current) => {
       const next = { ...current };
       updates.forEach(({ id, field }) => delete next[`${id}::${field}`]);
@@ -218,40 +222,12 @@ function Index() {
     });
     setFeedback(`${accepted} pasted ${accepted === 1 ? "value" : "values"}${invalid ? ` · ${invalid} invalid ${invalid === 1 ? "cell" : "cells"} flagged` : ""}`);
     return true;
-  }, [filteredRows]);
-
-  const saveChanges = async () => {
-    const provider = createGradingDataProvider(window.localStorage);
-    try {
-      await provider.saveDrafts(participants.map(toAssessmentDraft));
-      savedParticipantsRef.current = structuredClone(participants);
-      setFeedback(`Changes saved · ${DEMO_STORAGE_NOTICE}`);
-    } catch {
-      setFeedback("Could not save to this browser. Your edits remain on screen.");
-    }
-  };
-
-  const discardChanges = () => {
-    const baseline = savedParticipantsRef.current;
-    setParticipants((current) => current.map((row) => {
-      const original = baseline.find((candidate) => candidate.id === row.id);
-      return original ? structuredClone(original) : row;
-    }));
-    setErrors({});
-    setFeedback("Unsaved edits discarded.");
-    setDiscardOpen(false);
-  };
+  }, [persistParticipants, visibleRows]);
 
   const openNotes = (participant: Participant) => {
     setNoteTarget(participant);
     setNoteDraft(participant.Comments);
     setNoteOpen(true);
-  };
-
-  const applyNotes = () => {
-    if (noteTarget) updateField(noteTarget.id, "Comments", noteDraft);
-    setNoteOpen(false);
-    setNoteTarget(null);
   };
 
   const exportWorkbook = async () => {
@@ -266,22 +242,21 @@ function Index() {
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, sheet, "T3 MT Grading");
       XLSX.writeFile(workbook, "Zilla_T3_Master_Trainer_Grading.xlsx");
-      setFeedback(`Excel downloaded · ${filteredRows.length} visible rows${dirtyRowIds.size ? " · includes unsaved edits" : " · saved values"}`);
+      setFeedback(`Excel downloaded · ${filteredRows.length} filtered rows`);
     } catch {
       setFeedback("The Excel file could not be created. Your edits remain on screen.");
     }
   };
 
   const requestLogout = () => {
-    if (dirtyRowIds.size) {
-      setConfirmLogout(true);
-      return;
-    }
     window.sessionStorage.removeItem("zilla-t3-demo-auth");
+    setSelectedBatchId(null);
     setLoginStep("phone");
   };
 
-  if (!sessionReady || loginStep !== "workspace") {
+  const requestBatchChange = () => setLoginStep("batch");
+
+  if (!sessionReady || !isAuthenticated) {
     return (
       <LoginScreen
         step={loginStep === "otp" ? "otp" : "phone"}
@@ -293,97 +268,108 @@ function Index() {
         onBack={() => setLoginStep("phone")}
         onVerify={() => {
           window.sessionStorage.setItem("zilla-t3-demo-auth", "yes");
-          setLoginStep("workspace");
+          setLoginStep("batch");
         }}
       />
     );
   }
 
-  const uniqueOptions = (field: keyof Filters) => [...new Set(participants.map((row) => row[field]).filter(Boolean))].sort();
-  const filterSelect = (label: string, value: string, options: string[], onValueChange: (value: string) => void) => (
+  if (loginStep === "batch" || !selectedBatch) {
+    return <BatchSelectionScreen batches={batches} loading={loading} onSelect={(id) => {
+      setSelectedBatchId(id);
+      setSearch("");
+      setFilters({ District: NO_FILTER, Taluka: NO_FILTER });
+      setAssessmentStatus(NO_FILTER);
+      setSort(null);
+      setLoginStep("workspace");
+    }} onSignOut={requestLogout} />;
+  }
+
+  const uniqueOptions = (field: keyof Filters) => [...new Set(batchRows.map((row) => row[field]).filter(Boolean))].sort();
+  const filterSelect = (label: string, value: string, options: readonly string[], onValueChange: (value: string) => void, allLabel = `All ${label}`) => (
     <Select value={value} onValueChange={onValueChange}>
-      <SelectTrigger aria-label={label} className="h-8 w-[132px] rounded border-border bg-background text-xs">
+      <SelectTrigger aria-label={label} className={`h-9 rounded-md border-border bg-background text-xs ${label === "Assessment status" ? "w-[160px]" : "w-[132px]"}`}>
         <SelectValue placeholder={label} />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value={NO_FILTER}>All {label}</SelectItem>
+        <SelectItem value={NO_FILTER}>{allLabel}</SelectItem>
         {options.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}
       </SelectContent>
     </Select>
   );
 
   return (
-    <main className="min-h-screen overflow-hidden bg-background text-foreground">
+    <main className="min-h-screen overflow-hidden bg-slate-50/70 text-foreground">
       <header className="border-b border-border bg-card">
         <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 px-4 py-2 lg:px-6">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded bg-primary text-primary-foreground"><Award className="size-5" /></div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-sm font-semibold">Zilla T3 Master Trainer Grading</h1>
-                <span className="rounded border border-accent-foreground/15 bg-accent px-1.5 py-0.5 text-[10px] font-bold text-accent-foreground">DEMO</span>
-              </div>
-              <p className="text-[11px] text-muted-foreground">Five-day T3 program <span className="mx-1">·</span> Internal assessment workspace</p>
-            </div>
+            <img src="/illumine-logo.png" alt="Illumine" className="h-10 w-auto shrink-0 object-contain" />
+            <h1 className="text-sm font-semibold">Zilla T3 Master Trainer Grading</h1>
           </div>
           <div className="flex items-center gap-2">
-            <span className="hidden items-center gap-1.5 border-r border-border pr-3 text-[11px] text-muted-foreground sm:inline-flex"><span className="size-1.5 rounded-full bg-primary" />{DEMO_STORAGE_NOTICE}</span>
+            <span className="hidden items-center gap-1.5 border-r border-border pr-3 text-[11px] text-emerald-700 sm:inline-flex"><span className="size-1.5 rounded-full bg-emerald-500" />{AUTOSAVE_NOTICE}</span>
+            <Button variant="outline" size="sm" onClick={requestBatchChange}><Layers3 className="size-3.5" />Change batch</Button>
             <Button variant="ghost" size="icon" aria-label="Sign out of demo" title="Sign out of demo" onClick={requestLogout}><LogOut /></Button>
           </div>
         </div>
       </header>
 
-      <section className="mx-auto max-w-[1920px] px-3 py-4 sm:px-5 lg:px-7">
-        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="mb-1 text-[10px] font-semibold uppercase text-primary">Assessment register <span className="mx-1 text-muted-foreground">/</span> 2026</p>
-            <h2 className="text-xl font-semibold">Master Trainer participants</h2>
-            <p className="mt-1 text-xs text-muted-foreground">Grade each participant across six program dimensions.</p>
+      <section className="mx-auto max-w-[1720px] space-y-5 px-4 py-5 sm:px-6 lg:px-8">
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="rounded-xl border border-border bg-card px-5 py-4 shadow-sm">
+            <h2 className="mb-3 text-sm font-semibold">Batch Info</h2>
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1.5 text-xs">
+              {([
+                ["Batch Name", selectedBatch.name],
+                ["Batch Date", selectedBatch.rows[0]?.batchDate ?? "—"],
+                ["Total MTs", distribution.total],
+                ["Graded MTs", distribution.graded],
+                ["Ungraded MTs", distribution.ungraded],
+                ["Absent MTs", distribution.absent],
+              ] as const).map(([label, value]) => <div key={label} className="col-span-2 grid grid-cols-subgrid border-b border-slate-100 py-0.5 last:border-0"><span className="text-muted-foreground">{label}</span><strong className="text-right font-semibold tabular-nums">{value}</strong></div>)}
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
-            <span className="inline-flex items-center gap-2 text-muted-foreground"><Users className="size-4" /> <strong className="font-semibold text-foreground">{filteredRows.length}</strong> of {participants.length} participants</span>
-            <span className="text-muted-foreground"><strong className="font-semibold text-foreground">{completedCount}</strong> graded</span>
-            <span className="text-muted-foreground"><strong className="font-semibold text-foreground">{dirtyRowIds.size}</strong> unsaved rows</span>
+          <div className="rounded-xl border border-border bg-card px-5 py-4 shadow-sm">
+            <div className="mb-3 flex items-baseline gap-2"><h2 className="text-sm font-semibold">Batch Performance</h2><span className="text-[11px] text-muted-foreground">(percent of graded MTs)</span></div>
+            <GradeDistribution rows={batchRows} />
           </div>
         </div>
 
-        <div className="mb-3 flex flex-wrap items-center gap-2 border-y border-border py-2.5">
-          <div className="flex h-8 w-full max-w-[240px] items-center gap-2 rounded border border-input bg-background px-2.5 focus-within:ring-1 focus-within:ring-ring">
+        <div className="rounded-xl border border-border bg-card px-5 py-4 shadow-sm">
+          <div className="mb-3 flex items-center gap-2 text-xs font-semibold"><Filter className="size-4 text-sky-700" />Find Master trainers <span className="ml-auto text-[11px] font-normal text-muted-foreground">{filteredRows.length} of {batchRows.length} shown</span></div>
+          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex h-9 w-full max-w-[260px] items-center gap-2 rounded-md border border-input bg-background px-2.5 focus-within:ring-1 focus-within:ring-ring">
             <Search className="size-3.5 shrink-0 text-muted-foreground" />
             <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, userId, phone" aria-label="Search name, userId, or phone" className="h-full border-0 p-0 text-xs shadow-none focus-visible:ring-0" />
           </div>
-          <div className="hidden items-center gap-1 text-xs text-muted-foreground sm:flex"><Filter className="size-3.5" /> Filters</div>
-          {filterSelect("batch", batchFilter, uniqueOptions("batchName"), setBatchFilter)}
-          {filterSelect("division", filters.Division, uniqueOptions("Division"), (value) => setFilters((current) => ({ ...current, Division: value })))}
           {filterSelect("district", filters.District, uniqueOptions("District"), (value) => setFilters((current) => ({ ...current, District: value })))}
           {filterSelect("taluka", filters.Taluka, uniqueOptions("Taluka"), (value) => setFilters((current) => ({ ...current, Taluka: value })))}
-          <div className="ml-auto flex items-center gap-1.5">
-            <Button variant="outline" size="sm" onClick={() => setDiscardOpen(true)} disabled={!dirtyRowIds.size} title="Discard unsaved edits"><RotateCcw /><span className="hidden md:inline">Discard</span></Button>
-            <Button size="sm" onClick={saveChanges} disabled={!dirtyRowIds.size}><Save /><span>Save changes</span></Button>
+          {filterSelect("Assessment status", assessmentStatus, ASSESSMENT_STATUSES, setAssessmentStatus, "All statuses")}
+          <div className="ml-auto flex flex-wrap items-center gap-1.5">
             <Button variant="outline" size="sm" onClick={exportWorkbook} title="Export the visible rows to Excel"><Download /><span className="hidden md:inline">Excel</span></Button>
           </div>
-        </div>
-
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-[11px] text-muted-foreground">
-          <div className="flex flex-wrap items-center gap-3" aria-label="Participant assessment status">
-            <LegendDot label="Untouched" className="bg-muted-foreground/35" />
-            <LegendDot label="Incomplete" className="bg-chart-4" />
-            <LegendDot label="Absent" className="bg-chart-3" />
-            <LegendDot label="Completed" className="bg-primary" />
-            <LegendDot label="Unsaved" className="bg-destructive" />
           </div>
-          <span className="flex items-center gap-1.5"><FileSpreadsheet className="size-3.5" /> Excel includes current filters{dirtyRowIds.size ? " and unsaved edits" : ""}</span>
         </div>
 
-        <div className="sheet-frame relative max-h-[calc(100vh-250px)] min-h-[400px] overflow-auto border border-border bg-background" aria-label="Participant grading spreadsheet">
+        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border px-5 py-4">
+          <div><h3 className="text-sm font-semibold">Master Trainer register</h3><p className="mt-0.5 text-[11px] text-muted-foreground">Up to 50 trainers per page. Scroll horizontally to grade; the first three columns stay in place.</p></div>
+          <div className="flex flex-wrap items-center gap-2" aria-label="Participant assessment status">
+            <LegendDot label="Graded" className="bg-emerald-600" />
+            <LegendDot label="Ungraded" className="bg-rose-600" />
+            <LegendDot label="Absent" className="bg-slate-500" />
+          </div>
+        </div>
+
+        <div className="sheet-frame relative max-h-[620px] min-h-[440px] overflow-auto bg-background" aria-label="Participant grading spreadsheet">
           {loading ? (
             <div className="flex min-h-[400px] items-center justify-center gap-2 text-sm text-muted-foreground"><span className="size-4 animate-spin rounded-full border-2 border-primary border-r-transparent" />Loading demo participant data…</div>
-          ) : participants.length === 0 ? (
+          ) : batchRows.length === 0 ? (
             <div className="flex min-h-[400px] flex-col items-center justify-center gap-2 text-sm text-muted-foreground"><Users className="size-6" />No demo participants are available.</div>
           ) : filteredRows.length === 0 ? (
             <div className="flex min-h-[400px] flex-col items-center justify-center gap-2 text-sm text-muted-foreground"><Search className="size-6" />No participants match these filters.</div>
           ) : (
-            <table className="grading-sheet w-max min-w-full border-separate border-spacing-0 text-left text-xs">
+            <table className="grading-sheet table-fixed border-separate border-spacing-0 text-left text-xs" style={{ width: COLUMN_ORDER.reduce((total, column, index) => total + columnWidth(column, index), 0) }}>
               <colgroup>{COLUMN_ORDER.map((column, index) => <col key={column} style={{ width: columnWidth(column, index) }} />)}</colgroup>
               <thead>
                 <tr className="group-header-row">
@@ -401,36 +387,43 @@ function Index() {
                 </tr>
               </thead>
               <tbody>
-                {filteredRows.map((participant, rowIndex) => {
+                {visibleRows.map((participant, rowIndex) => {
                   const graded = gradeParticipant(participant);
-                  const status = participantStatus(participant, graded, dirtyRowIds.has(participant.id));
+                  const status = participantStatus(participant);
                   return (
-                    <tr key={participant.id} className={`group border-b border-border ${dirtyRowIds.has(participant.id) ? "bg-accent/45" : rowIndex % 2 === 0 ? "bg-background" : "bg-muted/25"}`}>
+                    <tr key={participant.id} className={`group border-b border-border ${rowIndex % 2 === 0 ? "bg-background" : "bg-muted/25"}`}>
                       {COLUMN_ORDER.map((column, index) => {
                         if (column === "Sr no.") return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border px-2 py-1 text-center tabular-nums text-muted-foreground`}><span className="inline-flex items-center gap-1" title={status.label}><span className={`size-1.5 rounded-full ${status.dot}`} />{participant["Sr no."]}</span></td>;
-                        if (column === "Name") return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border px-2 py-1`}><div className="max-w-[160px] truncate font-medium" title={participant.Name}>{participant.Name}</div><div className={`text-[9px] ${status.text}`}>{status.label}{dirtyRowIds.has(participant.id) ? " · Unsaved" : ""}</div></td>;
+                        if (column === "Name") return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border px-2 py-1`}><div className="max-w-[160px] truncate font-medium" title={participant.Name}>{participant.Name}</div><div className={`text-[9px] ${status.text}`}>{status.label}</div></td>;
                         if (DIMENSION_FIELDS.includes(column as DimensionField)) {
                           const field = column as DimensionField;
                           const error = errors[`${participant.id}::${field}`];
                           return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border px-1.5 py-1 align-top`}>
-                            <Input id={cellId(participant.id, index)} aria-label={`${participant.Name}, ${field}`} aria-invalid={Boolean(error)} title={field} value={participant[field]} placeholder="·" onChange={(event) => handleCellValue(participant.id, field, event.target.value)} onPaste={(event) => { const text = event.clipboardData.getData("text"); if (pasteGrid(participant.id, field, text)) event.preventDefault(); }} onKeyDown={(event) => handleGridKey(event, filteredRows, rowIndex, field)} className={`h-6 w-full min-w-12 rounded-sm px-1 text-center text-xs tabular-nums shadow-none ${error ? "border-destructive ring-1 ring-destructive" : "border-transparent bg-muted/45 focus-visible:border-ring"}`} />
+                            <Input id={cellId(participant.id, index)} aria-label={`${participant.Name}, ${field}`} aria-invalid={Boolean(error)} title={field} value={participant[field]} placeholder="·" onChange={(event) => handleCellValue(participant.id, field, event.target.value)} onPaste={(event) => { const text = event.clipboardData.getData("text"); if (pasteGrid(participant.id, field, text)) event.preventDefault(); }} onKeyDown={(event) => handleGridKey(event, visibleRows, rowIndex, field)} className={`h-6 w-full min-w-12 rounded-sm px-1 text-center text-xs tabular-nums shadow-none ${error ? "border-destructive ring-1 ring-destructive" : "border-transparent bg-muted/45 focus-visible:border-ring"}`} />
                             {error && <span className="mt-1 block min-w-28 text-[9px] leading-tight text-destructive" role="alert">{error}</span>}
                           </td>;
                         }
                         if (column === "Score") return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border bg-muted/30 px-2 py-1 text-center font-semibold tabular-nums`}>{graded.Score === "" ? <span className="text-muted-foreground">—</span> : graded.Score}</td>;
+                        if (column === "Participation Status") return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border px-1.5 py-1`}>
+                          <Select value={participant["Participation Status"]} onValueChange={(value) => handleCellValue(participant.id, "Participation Status", value)}>
+                            <SelectTrigger id={cellId(participant.id, index)} aria-label={`${participant.Name}, Participation Status`} onKeyDown={(event) => handleGridKey(event, visibleRows, rowIndex, "Participation Status")} className="h-6 w-[104px] rounded-sm border-transparent bg-muted/45 px-1.5 text-[10px] shadow-none"><SelectValue /></SelectTrigger>
+                            <SelectContent><SelectItem value="Present">Present</SelectItem><SelectItem value="Absent">Absent</SelectItem></SelectContent>
+                          </Select>
+                        </td>;
                         if (column === "Internal Grade") return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border bg-muted/30 px-2 py-1 text-center`}><GradeBadge grade={graded["Internal Grade"]} /></td>;
                         if (column === "Recommendation") {
+                          if (graded.Recommendation === "Absent") return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border bg-muted/30 px-2 py-1 text-center text-[10px] font-semibold text-slate-600`}>Absent</td>;
                           const error = errors[`${participant.id}::Recommendation`];
                           return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border px-1.5 py-1 align-top`}>
                             <Select value={participant.Recommendation || "__blank__"} onValueChange={(value) => handleCellValue(participant.id, "Recommendation", value === "__blank__" ? "" : value)}>
-                              <SelectTrigger id={cellId(participant.id, index)} aria-label={`${participant.Name}, Recommendation`} aria-invalid={Boolean(error)} onKeyDown={(event) => handleGridKey(event, filteredRows, rowIndex, "Recommendation")} className={`h-6 w-[158px] rounded-sm px-1.5 text-[10px] shadow-none ${error ? "border-destructive" : "border-transparent bg-muted/45"}`}><SelectValue /></SelectTrigger>
+                              <SelectTrigger id={cellId(participant.id, index)} aria-label={`${participant.Name}, Recommendation`} aria-invalid={Boolean(error)} onKeyDown={(event) => handleGridKey(event, visibleRows, rowIndex, "Recommendation")} className={`h-6 w-[158px] rounded-sm px-1.5 text-[10px] shadow-none ${error ? "border-destructive" : "border-transparent bg-muted/45"}`}><SelectValue /></SelectTrigger>
                               <SelectContent><SelectItem value="__blank__">—</SelectItem><SelectItem value="Recommended as MT">Recommended as MT</SelectItem><SelectItem value="Not Recommended as MT">Not Recommended as MT</SelectItem></SelectContent>
                             </Select>
                             {error && <span className="mt-1 block text-[9px] text-destructive" role="alert">{error}</span>}
                           </td>;
                         }
                         if (column === "Comments") return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border px-1.5 py-1`}>
-                          <Button id={cellId(participant.id, index)} variant="ghost" size="sm" title={participant.Comments || "Add comments"} aria-label={`${participant.Name}, Comments`} onClick={() => openNotes(participant)} onPaste={(event) => { const text = event.clipboardData.getData("text"); if (pasteGrid(participant.id, "Comments", text)) event.preventDefault(); }} onKeyDown={(event) => handleGridKey(event, filteredRows, rowIndex, "Comments")} className="h-6 w-full min-w-44 justify-start gap-1.5 overflow-hidden rounded-sm px-1.5 text-[10px] font-normal">
+                          <Button id={cellId(participant.id, index)} variant="ghost" size="sm" title={participant.Comments || "Add comments"} aria-label={`${participant.Name}, Comments`} onClick={() => openNotes(participant)} onPaste={(event) => { const text = event.clipboardData.getData("text"); if (pasteGrid(participant.id, "Comments", text)) event.preventDefault(); }} onKeyDown={(event) => handleGridKey(event, visibleRows, rowIndex, "Comments")} className="h-6 w-full min-w-44 justify-start gap-1.5 overflow-hidden rounded-sm px-1.5 text-[10px] font-normal">
                             <MessageSquareText className="size-3 shrink-0 text-muted-foreground" /><span className="truncate text-muted-foreground">{participant.Comments || "Add comment…"}</span>
                           </Button>
                         </td>;
@@ -445,36 +438,25 @@ function Index() {
           )}
         </div>
 
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[10px] text-muted-foreground">
-          <p>{feedback || (dirtyRowIds.size ? `${dirtyRowIds.size} row${dirtyRowIds.size === 1 ? "" : "s"} have unsaved edits.` : `Showing ${filteredRows.length} participants · all rows are demo data.`)}</p>
-          <p>Grade ranges: A 24–30 · B 15–23 · C 10–14 · D 0–9 <span className="ml-1 font-medium text-chart-3">Business confirmation required</span></p>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-3 text-[11px] text-muted-foreground">
+          <p>{feedback || `Showing ${filteredRows.length ? (currentPage - 1) * PAGE_SIZE + 1 : 0}–${Math.min(currentPage * PAGE_SIZE, filteredRows.length)} of ${filteredRows.length} Master trainers`}</p>
+          <div className="flex items-center gap-2"><Button variant="outline" size="sm" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={currentPage === 1} aria-label="Previous page"><ChevronLeft className="size-3.5" /></Button><span className="min-w-16 text-center">Page {currentPage} of {pageCount}</span><Button variant="outline" size="sm" onClick={() => setPage((value) => Math.min(pageCount, value + 1))} disabled={currentPage === pageCount} aria-label="Next page"><ChevronRight className="size-3.5" /></Button></div>
+          <p className="flex items-center gap-1.5"><FileSpreadsheet className="size-3.5" /> Excel exports filtered rows</p>
         </div>
+        </div>
+        <p className="text-center text-[11px] text-muted-foreground">Demo grade ranges: A 24–30 · B 15–23 · C 10–14 · D 0–9 <span className="font-medium">· Business confirmation required</span></p>
       </section>
 
       <Dialog open={noteOpen} onOpenChange={setNoteOpen}>
         <DialogContent className="max-w-xl rounded-md">
           <DialogHeader>
-            <DialogTitle>Participant comments</DialogTitle>
+            <DialogTitle>Master Trainer comments</DialogTitle>
             <DialogDescription>{noteTarget?.Name} <span className="mx-1">·</span> {noteTarget?.userId}</DialogDescription>
           </DialogHeader>
-          <Textarea autoFocus rows={9} value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} placeholder="Add assessment observations or follow-up notes…" aria-label="Participant comments" className="min-h-52 resize-y text-sm" />
-          <DialogFooter><DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose><Button onClick={applyNotes}>Apply comments</Button></DialogFooter>
+          <Textarea autoFocus rows={9} value={noteDraft} onChange={(event) => { setNoteDraft(event.target.value); if (noteTarget) updateField(noteTarget.id, "Comments", event.target.value); }} placeholder="Add assessment observations or follow-up notes…" aria-label="Participant comments" className="min-h-52 resize-y text-sm" />
+          <DialogFooter><span className="mr-auto text-xs text-muted-foreground">Autosaved as you type</span><DialogClose asChild><Button variant="outline">Done</Button></DialogClose></DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <AlertDialog open={discardOpen} onOpenChange={setDiscardOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader><AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle><AlertDialogDescription>This will return edited grading fields to their last saved values. This cannot be undone.</AlertDialogDescription></AlertDialogHeader>
-          <AlertDialogFooter><AlertDialogCancel>Keep editing</AlertDialogCancel><AlertDialogAction onClick={discardChanges} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Discard changes</AlertDialogAction></AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog open={confirmLogout} onOpenChange={setConfirmLogout}>
-        <AlertDialogContent>
-          <AlertDialogHeader><AlertDialogTitle>Leave with unsaved edits?</AlertDialogTitle><AlertDialogDescription>Your unsaved edits will not be stored in Demo storage if you sign out now.</AlertDialogDescription></AlertDialogHeader>
-          <AlertDialogFooter><AlertDialogCancel>Keep grading</AlertDialogCancel><AlertDialogAction onClick={() => { window.sessionStorage.removeItem("zilla-t3-demo-auth"); setConfirmLogout(false); setLoginStep("phone"); }}>Sign out</AlertDialogAction></AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </main>
   );
 }
@@ -493,9 +475,8 @@ function LoginScreen({ step, phone, otp, setPhone, setOtp, onContinue, onBack, o
   return (
     <main className="flex min-h-screen flex-col bg-background">
       <header className="flex h-14 items-center gap-3 border-b border-border px-5 lg:px-8">
-        <div className="flex size-8 items-center justify-center rounded bg-primary text-primary-foreground"><Award className="size-4" /></div>
+        <img src="/illumine-logo.png" alt="Illumine" className="h-9 w-auto shrink-0 object-contain" />
         <span className="text-sm font-semibold">Zilla <span className="font-normal text-muted-foreground">/</span> T3 Master Trainer Grading</span>
-        <span className="ml-auto rounded border border-accent-foreground/15 bg-accent px-1.5 py-0.5 text-[10px] font-bold text-accent-foreground">DEMO</span>
       </header>
       <div className="flex flex-1 items-center justify-center px-4 py-10">
         <form className="w-full max-w-[360px]" onSubmit={(event) => {
@@ -508,7 +489,7 @@ function LoginScreen({ step, phone, otp, setPhone, setOtp, onContinue, onBack, o
             setError(""); onVerify();
           }
         }}>
-          <div className="mb-7 flex size-12 items-center justify-center rounded-md border border-border bg-accent text-primary"><Award className="size-6" /></div>
+          <img src="/illumine-logo.png" alt="Illumine" className="mb-7 h-14 w-auto object-contain" />
           {step === "phone" ? <>
             <p className="mb-2 text-[10px] font-semibold uppercase text-primary">Five-day T3 program</p>
             <h1 className="text-2xl font-semibold">Grader sign in</h1>
@@ -523,7 +504,7 @@ function LoginScreen({ step, phone, otp, setPhone, setOtp, onContinue, onBack, o
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">Code step for <span className="font-medium text-foreground">{phone}</span>. This demo accepts any code.</p>
             <label htmlFor="demo-otp" className="mb-1.5 mt-7 block text-xs font-medium">One-time code</label>
             <Input id="demo-otp" inputMode="numeric" autoComplete="one-time-code" placeholder="Any code" value={otp} onChange={(event) => setOtp(event.target.value)} className="h-10" />
-            <Button type="submit" className="mt-4 w-full">Open grading workspace</Button>
+            <Button type="submit" className="mt-4 w-full">Choose batch</Button>
           </>}
           {error && <p className="mt-2 text-xs text-destructive" role="alert">{error}</p>}
           <div className="mt-7 flex gap-2 border-t border-border pt-4 text-xs leading-relaxed text-muted-foreground"><ShieldAlert className="mt-0.5 size-4 shrink-0 text-chart-3" /><p><strong className="font-semibold text-foreground">Demo authentication · not secure.</strong> Any mobile number and any code are accepted. No code is sent or verified.</p></div>
@@ -534,23 +515,77 @@ function LoginScreen({ step, phone, otp, setPhone, setOtp, onContinue, onBack, o
   );
 }
 
-function LegendDot({ label, className }: { label: string; className: string }) {
-  return <span className="inline-flex items-center gap-1.5"><span className={`size-1.5 rounded-full ${className}`} />{label}</span>;
+function BatchSelectionScreen({ batches, loading, onSelect, onSignOut }: {
+  batches: { id: string; name: string; rows: Participant[] }[];
+  loading: boolean;
+  onSelect: (id: string) => void;
+  onSignOut: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return <main className="min-h-screen bg-background text-foreground">
+    <header className="flex min-h-14 items-center gap-3 border-b border-border bg-card px-5 lg:px-8">
+      <img src="/illumine-logo.png" alt="Illumine" className="h-9 w-auto shrink-0 object-contain" />
+      <span className="text-sm font-semibold">Zilla T3 Master Trainer Grading</span>
+      <Button variant="ghost" size="icon" className="ml-auto" aria-label="Sign out of demo" onClick={onSignOut}><LogOut /></Button>
+    </header>
+    <section className="mx-auto max-w-2xl px-5 py-14 sm:py-20">
+      <div className="mb-8 flex size-12 items-center justify-center rounded-md border border-border bg-accent text-primary"><Layers3 className="size-6" /></div>
+      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-primary">Assessment workspace</p>
+      <h1 className="text-2xl font-semibold">Select a batch</h1>
+      <p className="mt-2 text-sm text-muted-foreground">Choose the batch you want to grade.</p>
+      <div className="mt-8 rounded-lg border border-border bg-card p-5 shadow-sm">
+        <label className="mb-2 block text-xs font-semibold">Batch</label>
+        {loading ? <p className="text-sm text-muted-foreground">Loading batches…</p> : batches.length === 0 ? <p className="text-sm text-muted-foreground">No batches are available.</p> : <>
+          <Select open={open} onOpenChange={setOpen} onValueChange={onSelect}>
+            <SelectTrigger aria-label="Select a batch" className="h-11 w-full"><SelectValue placeholder="Select a batch to open its participants" /></SelectTrigger>
+            <SelectContent className="w-[min(90vw,580px)]">
+              {batches.map((batch) => <SelectItem key={batch.id} value={batch.id} className="py-3 pr-8">
+                <div className="min-w-0 space-y-1">
+                  <div className="font-semibold">{batch.name}</div>
+                  <div className="text-[11px] text-muted-foreground">{batch.rows[0]?.batchDate ?? "—"} · {batch.rows.length} participant{batch.rows.length === 1 ? "" : "s"}</div>
+                </div>
+              </SelectItem>)}
+            </SelectContent>
+          </Select>
+        </>}
+      </div>
+      <p className="mt-5 text-[11px] text-muted-foreground">{AUTOSAVE_NOTICE}.</p>
+    </section>
+  </main>;
 }
+
+function GradeDistribution({ rows }: { rows: Participant[] }) {
+  const distribution = gradeDistribution(rows);
+  return <div className="space-y-2" aria-label={`Grade distribution: ${GRADES.map((grade) => `${grade} ${distribution.percentages[grade]}%`).join(", ")}`}>
+    {GRADES.map((grade) => <div key={grade} className="grid grid-cols-[1rem_minmax(0,1fr)_2.5rem] items-center gap-3 text-xs">
+      <span className={`font-bold ${GRADE_STYLE[grade].text}`}>{grade}</span>
+      <div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${GRADE_STYLE[grade].fill}`} style={{ width: `${distribution.percentages[grade]}%` }} /></div>
+      <span className={`text-right font-semibold tabular-nums ${GRADE_STYLE[grade].text}`}>{distribution.percentages[grade]}%</span>
+    </div>)}
+  </div>;
+}
+
+function LegendDot({ label, className }: { label: string; className: string }) {
+  return <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700"><span className={`size-2.5 rounded-full ${className}`} />{label}</span>;
+}
+
+const GRADE_STYLE: Record<Grade, { text: string; fill: string; badge: string }> = {
+  A: { text: "text-emerald-700", fill: "bg-emerald-500", badge: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+  B: { text: "text-sky-700", fill: "bg-sky-500", badge: "border-sky-200 bg-sky-50 text-sky-700" },
+  C: { text: "text-amber-700", fill: "bg-amber-500", badge: "border-amber-200 bg-amber-50 text-amber-700" },
+  D: { text: "text-rose-700", fill: "bg-rose-500", badge: "border-rose-200 bg-rose-50 text-rose-700" },
+};
 
 function GradeBadge({ grade }: { grade: GradedParticipant["Internal Grade"] }) {
   if (!grade) return <span className="text-muted-foreground">—</span>;
-  const style = grade === "Absent" ? "border-chart-3/30 bg-chart-3/10 text-chart-3" : grade === "A" ? "border-primary/25 bg-primary/10 text-primary" : grade === "D" ? "border-destructive/25 bg-destructive/10 text-destructive" : "border-border bg-muted text-foreground";
-  return <span className={`inline-flex min-w-9 justify-center rounded border px-1.5 py-0.5 text-[10px] font-semibold ${style}`}>{grade}</span>;
+  if (grade === "Absent") return <span className="inline-flex min-w-9 justify-center rounded-md border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">Absent</span>;
+  return <span className={`inline-flex min-w-9 justify-center rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${GRADE_STYLE[grade].badge}`}>{grade}</span>;
 }
 
-function participantStatus(participant: Participant, graded: GradedParticipant, dirty: boolean) {
-  const dimensions = DIMENSION_FIELDS.map((field) => participant[field]);
-  if (dirty) return { label: "Unsaved", dot: "bg-destructive", text: "text-destructive" };
-  if (graded["Internal Grade"] === "Absent") return { label: "Absent", dot: "bg-chart-3", text: "text-chart-3" };
-  if (graded["Internal Grade"] !== "") return { label: "Completed", dot: "bg-primary", text: "text-primary" };
-  if (dimensions.every((value) => value === "") && !participant.Recommendation && !participant.Comments) return { label: "Untouched", dot: "bg-muted-foreground/35", text: "text-muted-foreground" };
-  return { label: "Incomplete", dot: "bg-chart-4", text: "text-chart-4" };
+function participantStatus(participant: Participant) {
+  if (participant["Participation Status"] === "Absent") return { label: "Absent", dot: "bg-slate-500", text: "text-slate-600" };
+  if (gradeParticipant(participant)["Internal Grade"] !== "") return { label: "Graded", dot: "bg-emerald-600", text: "text-emerald-700" };
+  return { label: "Ungraded", dot: "bg-rose-600", text: "text-rose-700" };
 }
 
 function columnWidth(column: string, index: number) {
@@ -562,14 +597,15 @@ function columnWidth(column: string, index: number) {
   if (column === "Department" || column === "Designation" || column.startsWith("Cognitive") || column.startsWith("Program") || column.startsWith("MT Assessment")) return 142;
   if (DIMENSION_FIELDS.includes(column as DimensionField)) return column.length > 32 ? 172 : 142;
   if (column === "Recommendation") return 170;
+  if (column === "Participation Status") return 126;
   if (column === "Comments") return 190;
   if (column === "batchName") return 172;
   return 112;
 }
 
 function frozenClasses(index: number, header: boolean) {
-  if (index !== 2) return "";
-  return `sticky left-0 ${header ? "z-50" : "z-20"} bg-inherit`;
+  if (index >= 3) return "";
+  return header ? "frozen-cell frozen-header" : "frozen-cell";
 }
 
 function cellId(id: string, columnIndex: number) {
