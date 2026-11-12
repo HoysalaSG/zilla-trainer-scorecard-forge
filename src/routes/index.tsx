@@ -1,9 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { format } from "date-fns";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -18,8 +20,10 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -32,6 +36,7 @@ import {
   gradeParticipant,
   GRADES,
   isDimensionValue,
+  trainingWeek,
   type DimensionField,
   type EditableField,
   type Grade,
@@ -111,10 +116,14 @@ function Index() {
     return () => { active = false; };
   }, [isAuthenticated]);
 
-  const batches = useMemo(() => [...new Set(participants.map((row) => row.batchId))].map((id) => {
-    const rows = participants.filter((row) => row.batchId === id);
-    return { id, name: rows[0]?.batchName ?? id, rows };
-  }), [participants]);
+  const batches = useMemo(() => {
+    const firstBatchDate = participants.map((row) => row.batchDate).filter(Boolean).sort()[0] ?? "";
+    return [...new Set(participants.map((row) => row.batchId))].map((id) => {
+      const rows = participants.filter((row) => row.batchId === id);
+      const date = rows[0]?.batchDate ?? "";
+      return { id, name: rows[0]?.batchName ?? id, date, week: trainingWeek(date, firstBatchDate), rows };
+    }).sort((a, b) => b.date.localeCompare(a.date) || a.name.localeCompare(b.name));
+  }, [participants]);
   const selectedBatch = batches.find((batch) => batch.id === selectedBatchId);
   const batchRows = useMemo(() => participants.filter((row) => row.batchId === selectedBatchId), [participants, selectedBatchId]);
   const distribution = gradeDistribution(batchRows);
@@ -315,26 +324,6 @@ function Index() {
       </header>
 
       <section className="mx-auto max-w-[1720px] space-y-5 px-4 py-5 sm:px-6 lg:px-8">
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="rounded-xl border border-border bg-card px-5 py-4 shadow-sm">
-            <h2 className="mb-3 text-sm font-semibold">Batch Info</h2>
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1.5 text-xs">
-              {([
-                ["Batch Name", selectedBatch.name],
-                ["Batch Date", selectedBatch.rows[0]?.batchDate ?? "—"],
-                ["Total MTs", distribution.total],
-                ["Graded MTs", distribution.graded],
-                ["Ungraded MTs", distribution.ungraded],
-                ["Absent MTs", distribution.absent],
-              ] as const).map(([label, value]) => <div key={label} className="col-span-2 grid grid-cols-subgrid border-b border-slate-100 py-0.5 last:border-0"><span className="text-muted-foreground">{label}</span><strong className="text-right font-semibold tabular-nums">{value}</strong></div>)}
-            </div>
-          </div>
-          <div className="rounded-xl border border-border bg-card px-5 py-4 shadow-sm">
-            <div className="mb-3 flex items-baseline gap-2"><h2 className="text-sm font-semibold">Batch Performance</h2><span className="text-[11px] text-muted-foreground">(percent of graded MTs)</span></div>
-            <GradeDistribution rows={batchRows} />
-          </div>
-        </div>
-
         <div className="rounded-xl border border-border bg-card px-5 py-4 shadow-sm">
           <div className="mb-3 flex items-center gap-2 text-xs font-semibold"><Filter className="size-4 text-sky-700" />Find Master trainers <span className="ml-auto text-[11px] font-normal text-muted-foreground">{filteredRows.length} of {batchRows.length} shown</span></div>
           <div className="flex flex-wrap items-center gap-2">
@@ -352,12 +341,22 @@ function Index() {
         </div>
 
         <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border px-5 py-4">
-          <div><h3 className="text-sm font-semibold">Master Trainer register</h3><p className="mt-0.5 text-[11px] text-muted-foreground">Up to 50 trainers per page. Scroll horizontally to grade; the first three columns stay in place.</p></div>
-          <div className="flex flex-wrap items-center gap-2" aria-label="Participant assessment status">
-            <LegendDot label="Graded" className="bg-emerald-600" />
-            <LegendDot label="Ungraded" className="bg-rose-600" />
-            <LegendDot label="Absent" className="bg-slate-500" />
+        <div className="grid gap-x-5 gap-y-3 border-b border-border px-5 py-3 md:grid-cols-[minmax(0,2fr)_minmax(250px,1fr)] md:items-center">
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold">Master Trainer registry of “{selectedBatch.name}”</h2>
+            <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-[11px]">
+              {([
+                ["Batch Date", displayBatchDate(selectedBatch.date)],
+                ["Total MTs", distribution.total],
+                ["Graded", distribution.graded],
+                ["Ungraded", distribution.ungraded],
+                ["Absent", distribution.absent],
+              ] as const).map(([label, value]) => <span key={label} className="whitespace-nowrap"><span className="text-muted-foreground">{label}</span> <strong className="ml-1 font-semibold tabular-nums">{value}</strong></span>)}
+            </div>
+          </div>
+          <div className="min-w-0 border-t border-border pt-2 md:border-l md:border-t-0 md:py-1 md:pl-5">
+            <div className="mb-1.5 flex items-baseline gap-2"><h3 className="text-[11px] font-semibold">Grade distribution</h3><span className="text-[10px] text-muted-foreground">% of graded MTs</span></div>
+            <GradeDistribution rows={batchRows} />
           </div>
         </div>
 
@@ -516,57 +515,81 @@ function LoginScreen({ step, phone, otp, setPhone, setOtp, onContinue, onBack, o
 }
 
 function BatchSelectionScreen({ batches, loading, onSelect, onSignOut }: {
-  batches: { id: string; name: string; rows: Participant[] }[];
+  batches: { id: string; name: string; date: string; week: number | null; rows: Participant[] }[];
   loading: boolean;
   onSelect: (id: string) => void;
   onSignOut: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  return <main className="min-h-screen bg-background text-foreground">
+  const [batchDate, setBatchDate] = useState<string | null>(null);
+  const [week, setWeek] = useState(NO_FILTER);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const weeks = [...new Set(batches.map((batch) => batch.week).filter((value): value is number => value !== null))].sort((a, b) => a - b);
+  const visibleBatches = batches.filter((batch) => (!batchDate || batch.date === batchDate) && (week === NO_FILTER || batch.week === Number(week)));
+  const selectedDate = batchDate ? new Date(`${batchDate}T00:00:00`) : undefined;
+  return <main className="min-h-screen bg-slate-50/70 text-foreground">
     <header className="flex min-h-14 items-center gap-3 border-b border-border bg-card px-5 lg:px-8">
       <img src="/illumine-logo.png" alt="Illumine" className="h-9 w-auto shrink-0 object-contain" />
       <span className="text-sm font-semibold">Zilla T3 Master Trainer Grading</span>
       <Button variant="ghost" size="icon" className="ml-auto" aria-label="Sign out of demo" onClick={onSignOut}><LogOut /></Button>
     </header>
-    <section className="mx-auto max-w-2xl px-5 py-14 sm:py-20">
-      <div className="mb-8 flex size-12 items-center justify-center rounded-md border border-border bg-accent text-primary"><Layers3 className="size-6" /></div>
-      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-primary">Assessment workspace</p>
-      <h1 className="text-2xl font-semibold">Select a batch</h1>
-      <p className="mt-2 text-sm text-muted-foreground">Choose the batch you want to grade.</p>
-      <div className="mt-8 rounded-lg border border-border bg-card p-5 shadow-sm">
-        <label className="mb-2 block text-xs font-semibold">Batch</label>
-        {loading ? <p className="text-sm text-muted-foreground">Loading batches…</p> : batches.length === 0 ? <p className="text-sm text-muted-foreground">No batches are available.</p> : <>
-          <Select open={open} onOpenChange={setOpen} onValueChange={onSelect}>
-            <SelectTrigger aria-label="Select a batch" className="h-11 w-full"><SelectValue placeholder="Select a batch to open its participants" /></SelectTrigger>
-            <SelectContent className="w-[min(90vw,580px)]">
-              {batches.map((batch) => <SelectItem key={batch.id} value={batch.id} className="py-3 pr-8">
-                <div className="min-w-0 space-y-1">
-                  <div className="font-semibold">{batch.name}</div>
-                  <div className="text-[11px] text-muted-foreground">{batch.rows[0]?.batchDate ?? "—"} · {batch.rows.length} participant{batch.rows.length === 1 ? "" : "s"}</div>
-                </div>
-              </SelectItem>)}
-            </SelectContent>
-          </Select>
-        </>}
+    <section className="mx-auto max-w-[1320px] px-5 py-8 sm:px-7 lg:px-10">
+      <h1 className="text-2xl font-semibold tracking-tight">Batches conducted in T3</h1>
+      <p className="mt-1 text-sm text-muted-foreground">Click on the specific batch to proceed for grading</p>
+      <div className="mt-6 rounded-xl border border-border bg-card shadow-sm">
+        <div className="flex flex-wrap items-end gap-3 border-b border-border px-5 py-4">
+          <div>
+            <label className="mb-1.5 block text-xs font-medium" htmlFor="batch-date-filter">Batch Date</label>
+            <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+              <PopoverTrigger asChild><Button id="batch-date-filter" variant="outline" className="h-9 min-w-44 justify-start gap-2 text-xs font-normal"><CalendarDays className="size-4 text-muted-foreground" />{batchDate ? displayBatchDate(batchDate) : "All dates"}</Button></PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start"><Calendar mode="single" selected={selectedDate} defaultMonth={selectedDate ?? (batches[0]?.date ? new Date(`${batches[0].date}T00:00:00`) : new Date())} onSelect={(date) => { if (date) { setBatchDate(format(date, "yyyy-MM-dd")); setCalendarOpen(false); } }} /></PopoverContent>
+            </Popover>
+          </div>
+          <div>
+            <span className="mb-1.5 block text-xs font-medium">Training week</span>
+            <Select value={week} onValueChange={setWeek}><SelectTrigger aria-label="Training week" className="h-9 w-40 text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value={NO_FILTER}>All weeks</SelectItem>{weeks.map((value) => <SelectItem key={value} value={String(value)}>Week {value}</SelectItem>)}</SelectContent></Select>
+          </div>
+          {(batchDate || week !== NO_FILTER) && <Button variant="ghost" size="sm" onClick={() => { setBatchDate(null); setWeek(NO_FILTER); }}>Clear filters</Button>}
+          <span className="ml-auto text-xs text-muted-foreground">{visibleBatches.length} {visibleBatches.length === 1 ? "batch" : "batches"}</span>
+        </div>
+        <div className="overflow-x-auto">
+          <div className="min-w-[1040px]">
+            <div className="grid grid-cols-[minmax(190px,1.5fr)_130px_120px_145px_130px_minmax(280px,1.8fr)] gap-4 border-b border-border bg-slate-50 px-5 py-3 text-[11px] font-semibold text-slate-600">
+              <span>Batch Name</span><span>Batch Date</span><span>Training Week</span><span>No. of participants</span><span>MTs Graded</span><span>Grading Distribution</span>
+            </div>
+            {loading ? <p className="px-5 py-10 text-center text-sm text-muted-foreground">Loading batches…</p> : visibleBatches.length === 0 ? <p className="px-5 py-10 text-center text-sm text-muted-foreground">No batches match these filters.</p> : visibleBatches.map((batch) => {
+              const results = gradeDistribution(batch.rows);
+              return <button key={batch.id} type="button" onClick={() => onSelect(batch.id)} aria-label={`Open ${batch.name} for grading`} className="grid w-full grid-cols-[minmax(190px,1.5fr)_130px_120px_145px_130px_minmax(280px,1.8fr)] items-center gap-4 border-b border-border px-5 py-4 text-left text-xs transition-colors last:border-b-0 hover:bg-sky-50/70 focus-visible:bg-sky-50/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-500">
+                <span className="font-semibold text-slate-900">{batch.name}</span>
+                <span>{displayBatchDate(batch.date)}</span>
+                <span>{batch.week === null ? "—" : `Week ${batch.week}`}</span>
+                <span className="tabular-nums">{results.total}</span>
+                <span className="font-semibold tabular-nums">{results.graded}/{results.total}</span>
+                <span className="flex flex-nowrap items-center gap-2 whitespace-nowrap" aria-label={`A ${results.percentages.A}%, B ${results.percentages.B}%, C ${results.percentages.C}%, D ${results.percentages.D}%`}>
+                  {GRADES.map((grade) => <span key={grade} className="inline-flex items-center gap-1"><span className={`size-1.5 rounded-full ${GRADE_STYLE[grade].fill}`} /><span className="font-semibold">{grade}</span> {results.percentages[grade]}%</span>)}
+                </span>
+              </button>;
+            })}
+          </div>
+        </div>
       </div>
-      <p className="mt-5 text-[11px] text-muted-foreground">{AUTOSAVE_NOTICE}.</p>
     </section>
   </main>;
 }
 
-function GradeDistribution({ rows }: { rows: Participant[] }) {
-  const distribution = gradeDistribution(rows);
-  return <div className="space-y-2" aria-label={`Grade distribution: ${GRADES.map((grade) => `${grade} ${distribution.percentages[grade]}%`).join(", ")}`}>
-    {GRADES.map((grade) => <div key={grade} className="grid grid-cols-[1rem_minmax(0,1fr)_2.5rem] items-center gap-3 text-xs">
-      <span className={`font-bold ${GRADE_STYLE[grade].text}`}>{grade}</span>
-      <div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${GRADE_STYLE[grade].fill}`} style={{ width: `${distribution.percentages[grade]}%` }} /></div>
-      <span className={`text-right font-semibold tabular-nums ${GRADE_STYLE[grade].text}`}>{distribution.percentages[grade]}%</span>
-    </div>)}
-  </div>;
+function displayBatchDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return value || "—";
+  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
 }
 
-function LegendDot({ label, className }: { label: string; className: string }) {
-  return <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700"><span className={`size-2.5 rounded-full ${className}`} />{label}</span>;
+function GradeDistribution({ rows }: { rows: Participant[] }) {
+  const distribution = gradeDistribution(rows);
+  return <div className="flex flex-wrap gap-x-4 gap-y-1" aria-label={`Grade distribution: ${GRADES.map((grade) => `${grade} ${distribution.percentages[grade]}%`).join(", ")}`}>
+    {GRADES.map((grade) => <span key={grade} className="inline-flex items-center gap-1 text-xs tabular-nums">
+      <span className={`size-1.5 rounded-full ${GRADE_STYLE[grade].fill}`} />
+      <span className={`font-semibold ${GRADE_STYLE[grade].text}`}>{grade}</span>
+      <span className="font-medium">{distribution.percentages[grade]}%</span>
+    </span>)}
+  </div>;
 }
 
 const GRADE_STYLE: Record<Grade, { text: string; fill: string; badge: string }> = {

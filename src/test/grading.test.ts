@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { COLUMN_ORDER, createDemoParticipants, EDITABLE_FIELDS, gradeDistribution, gradeParticipant, isDimensionValue, type Participant } from "@/lib/grading";
+import { COLUMN_ORDER, createDemoParticipants, EDITABLE_FIELDS, gradeDistribution, gradeParticipant, isDimensionValue, trainingWeek, type Participant } from "@/lib/grading";
 import { createGradingDataProvider, toAssessmentDraft } from "@/lib/grading-data-provider";
 
 function demoParticipant(index: number): Participant {
@@ -73,6 +73,14 @@ describe("T3 grading rules", () => {
       counts: { A: 2, B: 2, C: 1, D: 3 }, percentages: { A: 25, B: 25, C: 13, D: 37 } });
     rows[0]!["Participation Status"] = "Absent";
     expect(gradeDistribution(rows)).toMatchObject({ graded: 8, absent: 1, ungraded: 3, total: 12 });
+  });
+
+  it("groups batches into seven-day training weeks from the first batch", () => {
+    expect(trainingWeek("2026-05-12", "2026-05-12")).toBe(1);
+    expect(trainingWeek("2026-05-18", "2026-05-12")).toBe(1);
+    expect(trainingWeek("2026-05-19", "2026-05-12")).toBe(2);
+    expect(trainingWeek("2026-06-09", "2026-05-12")).toBe(5);
+    expect(trainingWeek("", "2026-05-12")).toBeNull();
   });
 
   it("accepts only blank, dash, and a single integer from zero through five", () => {

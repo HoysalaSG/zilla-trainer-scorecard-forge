@@ -127,6 +127,14 @@ export function gradeDistribution(participants: Participant[]) {
   return { counts, percentages, graded, absent, ungraded: participants.length - graded - absent, total: participants.length };
 }
 
+/** Seven-day training periods, starting on the earliest batch date. */
+export function trainingWeek(batchDate: string, firstBatchDate: string): number | null {
+  const batch = Date.parse(`${batchDate}T00:00:00Z`);
+  const first = Date.parse(`${firstBatchDate}T00:00:00Z`);
+  if (!Number.isFinite(batch) || !Number.isFinite(first) || batch < first) return null;
+  return Math.floor((batch - first) / (7 * 24 * 60 * 60 * 1000)) + 1;
+}
+
 export function createDemoParticipants(): Participant[] {
   const seedRows: {
     name: string;
