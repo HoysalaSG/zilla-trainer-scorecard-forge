@@ -560,7 +560,6 @@ function BatchSelectionScreen({ batches, loading, onSelect }: {
             <Select value={week} onValueChange={setWeek}><SelectTrigger aria-label="Training week" className="h-9 w-40 text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value={NO_FILTER}>All weeks</SelectItem>{weeks.map((value) => <SelectItem key={value} value={String(value)}>Week {value}</SelectItem>)}</SelectContent></Select>
           </div>
           {(batchDate || week !== NO_FILTER) && <Button variant="ghost" size="sm" onClick={() => { setBatchDate(null); setWeek(NO_FILTER); }}>Clear filters</Button>}
-          <span className="ml-auto text-xs text-muted-foreground">{visibleBatches.length} {visibleBatches.length === 1 ? "batch" : "batches"}</span>
         </div>
       </div>
       <div className="mt-5 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
