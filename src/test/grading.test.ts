@@ -16,13 +16,13 @@ describe("T3 grading rules", () => {
       "Coach 1", "Coach 2", "batchId", "batchName", "batchDate", "Program Assessment 1", "Program Assessment 2",
       "MT Assessment 1", "MT Assessment 2", "Cognitive Pre", "Cognitive Post", "Clarity of Ideas",
       "Ability to involve the class and listen to participation", "Appreciation of the goal of the program", "In class participation",
-      "Inner Confidence", "Appreciation and willingness to follow process", "Score", "Participation Status", "Internal Grade", "Recommendation", "Comments",
+      "Inner Confidence", "Appreciation and willingness to follow process", "Total Score", "Participation Status", "Internal Grade", "Recommendation", "Comments",
     ]);
   });
 
   it("groups the grading sheet as requested and seeds 50 Vidarbha trainers", () => {
     expect(COLUMN_GROUPS.map((group) => group.name)).toEqual([
-      "Participant details", "Batch details", "Assessments", "Dimensions (Please enter a score between 0–5)", "Grading",
+      "Participant details", "Personal Information", "Batch details", "Assessments", "Facilitation Score (Enter a score between 0–5)", "Grading",
     ]);
     const vidarbha = createDemoParticipants().filter((row) => row.batchName === "T3 Vidarbha · Jul 2026");
     expect(vidarbha).toHaveLength(50);

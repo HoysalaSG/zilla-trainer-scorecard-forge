@@ -22,13 +22,14 @@ export const GRADE_THRESHOLDS = {
 } as const;
 
 export const COLUMN_GROUPS = [
-  { name: "Participant details", columns: ["Sr no.", "userId", "Name", "email", "phone", "Division", "District", "Taluka", "Department", "Designation"] },
+  { name: "Participant details", columns: ["Sr no.", "userId", "Name"] },
+  { name: "Personal Information", columns: ["email", "phone", "Division", "District", "Taluka", "Department", "Designation"] },
   { name: "Batch details", columns: ["Coach 1", "Coach 2", "batchId", "batchName", "batchDate"] },
   {
     name: "Assessments",
     columns: ["Program Assessment 1", "Program Assessment 2", "MT Assessment 1", "MT Assessment 2", "Cognitive Pre", "Cognitive Post"],
   },
-  { name: "Dimensions (Please enter a score between 0–5)", columns: [...DIMENSION_FIELDS, "Score", "Participation Status"] },
+  { name: "Facilitation Score (Enter a score between 0–5)", columns: [...DIMENSION_FIELDS, "Total Score", "Participation Status"] },
   { name: "Grading", columns: ["Internal Grade", "Recommendation", "Comments"] },
 ] as const;
 

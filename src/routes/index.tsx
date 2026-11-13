@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { format } from "date-fns";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   ArrowDown,
+  ArrowLeft,
+  ArrowRight,
   ArrowUp,
   ArrowUpDown,
   CalendarDays,
@@ -11,8 +13,6 @@ import {
   Download,
   FileSpreadsheet,
   Filter,
-  Layers3,
-  LogOut,
   MessageSquareText,
   Search,
   Users,
@@ -138,7 +138,8 @@ function Index() {
     });
     if (!sort) return visible;
     const valueFor = (row: Participant, field: string) => {
-      if (field === "Score" || field === "Internal Grade") return gradeParticipant(row)[field];
+      if (field === "Total Score") return gradeParticipant(row).Score;
+      if (field === "Internal Grade") return gradeParticipant(row)[field];
       return row[field as keyof Participant];
     };
     return [...visible].sort((a, b) => {
@@ -250,7 +251,7 @@ function Index() {
       const XLSX = await import("xlsx");
       const rows = filteredRows.map((participant) => {
         const graded = gradeParticipant(participant);
-        return Object.fromEntries(COLUMN_ORDER.map((column) => [column, column === "Sr no." ? participant["Sr no."] : graded[column as keyof GradedParticipant] ?? ""]));
+        return Object.fromEntries(COLUMN_ORDER.map((column) => [column, column === "Total Score" ? graded.Score : column === "Sr no." ? participant["Sr no."] : graded[column as keyof GradedParticipant] ?? ""]));
       });
       const sheet = XLSX.utils.json_to_sheet(rows, { header: [...COLUMN_ORDER] });
       sheet["!cols"] = COLUMN_ORDER.map((column) => ({ wch: Math.min(38, Math.max(14, column.length + 2)) }));
@@ -261,12 +262,6 @@ function Index() {
     } catch {
       setFeedback("The Excel file could not be created. Your edits remain on screen.");
     }
-  };
-
-  const requestLogout = () => {
-    window.sessionStorage.removeItem("zilla-t3-demo-auth");
-    setSelectedBatchId(null);
-    setLoginStep("phone");
   };
 
   const requestBatchChange = () => setLoginStep("batch");
@@ -297,7 +292,7 @@ function Index() {
       setAssessmentStatus(NO_FILTER);
       setSort(null);
       setLoginStep("workspace");
-    }} onSignOut={requestLogout} />;
+    }} />;
   }
 
   const uniqueOptions = (field: keyof Filters) => [...new Set(batchRows.map((row) => row[field]).filter(Boolean))].sort();
@@ -323,8 +318,7 @@ function Index() {
           </div>
           <div className="flex items-center gap-2">
             <span className="hidden items-center gap-1.5 border-r border-border pr-3 text-[11px] text-emerald-700 sm:inline-flex"><span className="size-1.5 rounded-full bg-emerald-500" />{AUTOSAVE_NOTICE}</span>
-            <Button variant="outline" size="sm" onClick={requestBatchChange}><Layers3 className="size-3.5" />Change batch</Button>
-            <Button variant="ghost" size="icon" aria-label="Sign out of demo" title="Sign out of demo" onClick={requestLogout}><LogOut /></Button>
+            <Button variant="outline" size="sm" onClick={requestBatchChange}><ArrowLeft className="size-3.5" />Go back</Button>
           </div>
         </div>
       </header>
@@ -358,13 +352,17 @@ function Index() {
               ] as const).map(([label, value]) => <span key={label} className="whitespace-nowrap"><span className="text-muted-foreground">{label}</span> <strong className="ml-1 font-semibold tabular-nums">{value}</strong></span>)}
             </div>
           </div>
-          <div className="min-w-0 border-t border-border pt-2 sm:border-l sm:border-t-0 sm:py-1 sm:pl-5">
-            <div className="mb-1.5 flex items-baseline gap-2"><h3 className="text-[11px] font-semibold">Grade distribution</h3><span className="text-[10px] text-muted-foreground">% of graded MTs</span></div>
-            <GradeDistribution rows={batchRows} />
+          <div className="min-w-0 self-end border-t border-border pt-2 sm:border-l sm:border-t-0 sm:pb-0.5 sm:pl-5">
+            <div className="flex min-w-0 flex-nowrap items-center gap-x-3 overflow-x-auto whitespace-nowrap"><h3 className="text-[11px] font-semibold">Grade distribution (% of graded MTs)</h3><GradeDistribution rows={batchRows} /></div>
           </div>
           <Button variant="outline" size="sm" className="ml-auto" onClick={exportWorkbook} title="Export the filtered rows to Excel"><Download className="size-4" />Excel</Button>
         </div>
 
+        <div className="group/sheet relative">
+        <div className="pointer-events-none absolute bottom-3 right-4 z-[70] flex gap-1 rounded-md border border-border bg-white/95 p-1 opacity-0 shadow-md transition-opacity group-hover/sheet:pointer-events-auto group-hover/sheet:opacity-100 group-focus-within/sheet:pointer-events-auto group-focus-within/sheet:opacity-100" aria-label="Horizontal table scrolling">
+          <Button variant="ghost" size="icon" className="size-7" aria-label="Scroll table left" onClick={() => sheetRef.current?.scrollBy({ left: -500, behavior: "smooth" })}><ArrowLeft className="size-3.5" /></Button>
+          <Button variant="ghost" size="icon" className="size-7" aria-label="Scroll table right" onClick={() => sheetRef.current?.scrollBy({ left: 500, behavior: "smooth" })}><ArrowRight className="size-3.5" /></Button>
+        </div>
         <div ref={sheetRef} className="sheet-frame relative max-h-[620px] min-h-[440px] overflow-auto bg-background" aria-label="Participant grading spreadsheet">
           {loading ? (
             <div className="flex min-h-[400px] items-center justify-center gap-2 text-sm text-muted-foreground"><span className="size-4 animate-spin rounded-full border-2 border-primary border-r-transparent" />Loading demo participant data…</div>
@@ -377,10 +375,7 @@ function Index() {
               <colgroup>{COLUMN_ORDER.map((column, index) => <col key={column} style={{ width: columnWidth(column, index) }} />)}</colgroup>
               <thead>
                 <tr className="group-header-row">
-                  {COLUMN_GROUPS.map((group) => group.name === "Participant details" ? <Fragment key={group.name}>
-                    <th colSpan={3} scope="colgroup" className="group-header-cell frozen-group-header border-b border-r border-border bg-muted px-2 py-1.5 text-[10px] font-semibold uppercase text-muted-foreground">{group.name}</th>
-                    <th colSpan={group.columns.length - 3} scope="colgroup" className="group-header-cell border-b border-r border-border bg-muted px-2 py-1.5 text-[10px] font-semibold uppercase text-muted-foreground">{group.name}</th>
-                  </Fragment> : <th key={group.name} colSpan={group.columns.length} scope="colgroup" className="group-header-cell border-b border-r border-border bg-muted px-2 py-1.5 text-[10px] font-semibold uppercase text-muted-foreground">{group.name}</th>)}
+                  {COLUMN_GROUPS.map((group) => <th key={group.name} colSpan={group.columns.length} scope="colgroup" className={`group-header-cell ${group.name === "Participant details" ? "frozen-group-header" : ""} border-b border-r border-border bg-muted px-2 py-1.5 text-[10px] font-semibold uppercase text-muted-foreground`}>{group.name}</th>)}
                 </tr>
                 <tr className="column-header-row">
                   {COLUMN_ORDER.map((column, index) => (
@@ -410,7 +405,7 @@ function Index() {
                             {error && <span className="mt-1 block min-w-28 text-[9px] leading-tight text-destructive" role="alert">{error}</span>}
                           </td>;
                         }
-                        if (column === "Score") return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border bg-muted/30 px-2 py-1 text-center font-semibold tabular-nums`}>{graded.Score === "" ? <span className="text-muted-foreground">—</span> : graded.Score}</td>;
+                        if (column === "Total Score") return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border bg-muted/30 px-2 py-1 text-center font-semibold tabular-nums`}>{graded.Score === "" ? <span className="text-muted-foreground">—</span> : graded.Score}</td>;
                         if (column === "Participation Status") return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border px-1.5 py-1`}>
                           <Select value={participant["Participation Status"]} onValueChange={(value) => handleCellValue(participant.id, "Participation Status", value)}>
                             <SelectTrigger id={cellId(participant.id, index)} aria-label={`${participant.Name}, Participation Status`} onKeyDown={(event) => handleGridKey(event, visibleRows, rowIndex, "Participation Status")} className="h-6 w-full rounded-sm border-transparent bg-muted/45 px-1.5 text-[10px] shadow-none"><SelectValue /></SelectTrigger>
@@ -443,6 +438,7 @@ function Index() {
               </tbody>
             </table>
           )}
+        </div>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-3 text-[11px] text-muted-foreground">
@@ -519,11 +515,10 @@ function LoginScreen({ step, phone, otp, setPhone, setOtp, onContinue, onBack, o
   );
 }
 
-function BatchSelectionScreen({ batches, loading, onSelect, onSignOut }: {
+function BatchSelectionScreen({ batches, loading, onSelect }: {
   batches: { id: string; name: string; date: string; week: number | null; rows: Participant[] }[];
   loading: boolean;
   onSelect: (id: string) => void;
-  onSignOut: () => void;
 }) {
   const [batchDate, setBatchDate] = useState<string | null>(null);
   const [week, setWeek] = useState(NO_FILTER);
@@ -537,18 +532,21 @@ function BatchSelectionScreen({ batches, loading, onSelect, onSignOut }: {
     const searchable = [batch.name, batch.date, displayBatchDate(batch.date), batch.week === null ? "" : `Week ${batch.week}`, results.total, `${results.graded}/${results.total}`, ...Object.values(results.percentages), ...batch.rows.flatMap((row) => Object.values(row))];
     return searchable.some((value) => String(value).toLowerCase().includes(search.trim().toLowerCase()));
   });
+  const visibleTrainers = visibleBatches.flatMap((batch) => batch.rows);
+  const totals = gradeDistribution(visibleTrainers);
+  const recommended = visibleTrainers.filter((row) => row["Participation Status"] !== "Absent" && row.Recommendation === "Recommended as MT").length;
+  const notRecommended = visibleTrainers.filter((row) => row["Participation Status"] !== "Absent" && row.Recommendation === "Not Recommended as MT").length;
   const selectedDate = batchDate ? new Date(`${batchDate}T00:00:00`) : undefined;
   return <main className="min-h-screen bg-slate-50/70 text-foreground">
     <header className="flex min-h-14 items-center gap-3 border-b border-border bg-card px-5 lg:px-8">
       <img src="/illumine-logo.png" alt="Illumine" className="h-9 w-auto shrink-0 object-contain" />
       <span className="text-sm font-semibold">Trainer Grading tool</span>
-      <Button variant="ghost" size="icon" className="ml-auto" aria-label="Sign out of demo" onClick={onSignOut}><LogOut /></Button>
     </header>
     <section className="mx-auto max-w-[1320px] px-5 py-8 sm:px-7 lg:px-10">
       <h1 className="text-2xl font-semibold tracking-tight">Batches conducted in the program</h1>
       <p className="mt-1 text-sm text-muted-foreground">Click on the specific batch to proceed for grading</p>
-      <div className="mt-6 rounded-xl border border-border bg-card shadow-sm">
-        <div className="flex flex-wrap items-end gap-3 border-b border-border px-5 py-4">
+      <div className="mt-6 rounded-xl border border-border bg-card px-5 py-3 shadow-sm">
+        <div className="flex flex-wrap items-end gap-3">
           <div><label htmlFor="batch-search" className="mb-1.5 block text-xs font-medium">Search</label><div className="flex h-9 w-56 items-center gap-2 rounded-md border border-input px-2.5"><Search className="size-3.5 text-muted-foreground" /><Input id="batch-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search all table values" className="h-full border-0 p-0 text-xs shadow-none focus-visible:ring-0" /></div></div>
           <div>
             <label className="mb-1.5 block text-xs font-medium" htmlFor="batch-date-filter">Batch Date</label>
@@ -564,9 +562,21 @@ function BatchSelectionScreen({ batches, loading, onSelect, onSignOut }: {
           {(batchDate || week !== NO_FILTER) && <Button variant="ghost" size="sm" onClick={() => { setBatchDate(null); setWeek(NO_FILTER); }}>Clear filters</Button>}
           <span className="ml-auto text-xs text-muted-foreground">{visibleBatches.length} {visibleBatches.length === 1 ? "batch" : "batches"}</span>
         </div>
+      </div>
+      <div className="mt-5 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-3 text-[11px]">
+          <div className="flex flex-wrap gap-2">
+            {([["Batches conducted", visibleBatches.length], ["Total MTs", totals.total], ["Graded", totals.graded], ["Ungraded", totals.ungraded], ["Absent", totals.absent]] as const).map(([label, value]) => <span key={label} className="whitespace-nowrap rounded-full bg-slate-100/80 px-3 py-1.5"><span className="text-muted-foreground">{label}</span> <strong className="ml-1 tabular-nums">{value}</strong></span>)}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <span className="whitespace-nowrap rounded-full bg-slate-100/80 px-3 py-1.5"><span className="text-muted-foreground">MTs recommended</span> <strong className="ml-1 tabular-nums">{recommended}</strong></span>
+            <span className="whitespace-nowrap rounded-full bg-slate-100/80 px-3 py-1.5"><span className="text-muted-foreground">MTs not recommended</span> <strong className="ml-1 tabular-nums">{notRecommended}</strong></span>
+          </div>
+          <div className="flex min-w-0 flex-nowrap items-center gap-x-3 overflow-x-auto whitespace-nowrap rounded-full bg-slate-100/80 px-3 py-1.5"><span className="font-semibold">Grade distribution (% of graded MTs)</span><GradeDistribution rows={visibleTrainers} /></div>
+        </div>
         <div className="overflow-x-auto">
           <div className="min-w-[1260px]">
-            <div className="grid grid-cols-[minmax(160px,1.5fr)_110px_110px_125px_125px_105px_85px_minmax(220px,1.8fr)] gap-3 border-b border-border bg-slate-50 px-5 py-3 text-[11px] font-semibold text-slate-600">
+            <div className="grid grid-cols-[minmax(160px,1.5fr)_110px_110px_125px_125px_105px_85px_minmax(220px,1.8fr)] gap-3 border-b border-slate-300 bg-slate-200/80 px-5 py-3 text-[11px] font-bold text-slate-800">
               <span>Batch Name</span><span>Batch Date</span><span>Coach 1</span><span>Coach 2</span><span>Training Week</span><span>Participants</span><span>MTs Graded</span><span>Grading Distribution</span>
             </div>
             {loading ? <p className="px-5 py-10 text-center text-sm text-muted-foreground">Loading batches…</p> : visibleBatches.length === 0 ? <p className="px-5 py-10 text-center text-sm text-muted-foreground">No batches match these filters.</p> : visibleBatches.map((batch) => {
@@ -598,7 +608,7 @@ function displayBatchDate(value: string) {
 
 function GradeDistribution({ rows }: { rows: Participant[] }) {
   const distribution = gradeDistribution(rows);
-  return <div className="flex flex-wrap gap-x-4 gap-y-1" aria-label={`Grade distribution: ${GRADES.map((grade) => `${grade} ${distribution.percentages[grade]}%`).join(", ")}`}>
+  return <div className="flex flex-nowrap gap-x-4 whitespace-nowrap" aria-label={`Grade distribution: ${GRADES.map((grade) => `${grade} ${distribution.percentages[grade]}%`).join(", ")}`}>
     {GRADES.map((grade) => <span key={grade} className="inline-flex items-center gap-1 text-xs tabular-nums">
       <span className={`size-1.5 rounded-full ${GRADE_STYLE[grade].fill}`} />
       <span className={`font-semibold ${GRADE_STYLE[grade].text}`}>{grade}</span>
@@ -635,7 +645,7 @@ function columnWidth(column: string, index: number) {
   if (column === "Department" || column === "Designation") return 100;
   if (column.startsWith("Cognitive") || column.startsWith("Program") || column.startsWith("MT Assessment")) return 84;
   if (DIMENSION_FIELDS.includes(column as DimensionField)) return column.length > 32 ? 112 : 88;
-  if (column === "Score") return 62;
+  if (column === "Total Score") return 78;
   if (column === "Internal Grade") return 92;
   if (column === "Recommendation") return 140;
   if (column === "Participation Status") return 96;
