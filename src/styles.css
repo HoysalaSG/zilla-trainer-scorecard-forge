@@ -151,17 +151,17 @@
   background: oklch(0.965 0.01 255);
 }
 
+.grading-sheet .frozen-group-header {
+  left: 0;
+  z-index: 60;
+  box-shadow: 5px 0 8px -6px oklch(0.3 0.02 260 / 35%);
+}
+
 .grading-sheet .column-header-row th {
   position: sticky;
   top: 32px;
   z-index: 30;
   background: oklch(1 0 0);
-}
-
-.grading-sheet .group-header-row th:first-child {
-  left: 0;
-  z-index: 60;
-  background: oklch(0.965 0.01 255);
 }
 
 .grading-sheet .frozen-cell {
@@ -180,11 +180,11 @@
 }
 
 .grading-sheet tr > .frozen-cell:nth-child(2) {
-  left: 58px;
+  left: 40px;
 }
 
 .grading-sheet tr > .frozen-cell:nth-child(3) {
-  left: 163px;
+  left: 118px;
   box-shadow: 5px 0 8px -6px oklch(0.3 0.02 260 / 35%);
 }
 

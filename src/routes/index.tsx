@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { format } from "date-fns";
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -15,7 +15,6 @@ import {
   LogOut,
   MessageSquareText,
   Search,
-  ShieldAlert,
   Users,
 } from "lucide-react";
 
@@ -86,6 +85,7 @@ function Index() {
   const [noteTarget, setNoteTarget] = useState<Participant | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteOpen, setNoteOpen] = useState(false);
+  const sheetRef = useRef<HTMLDivElement | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
   const isAuthenticated = loginStep === "batch" || loginStep === "workspace";
 
@@ -131,7 +131,7 @@ function Index() {
   const filteredRows = useMemo(() => {
     const term = search.trim().toLowerCase();
     const visible = batchRows.filter((row) => {
-      const matchesSearch = !term || [row.Name, row.userId, row.phone].some((value) => value.toLowerCase().includes(term));
+      const matchesSearch = !term || [...Object.values(row), ...Object.values(gradeParticipant(row))].some((value) => String(value).toLowerCase().includes(term));
       const matchesGeography = (Object.keys(filters) as (keyof Filters)[]).every((key) => filters[key] === NO_FILTER || row[key] === filters[key]);
       const matchesStatus = assessmentStatus === NO_FILTER || participantStatus(row).label === assessmentStatus;
       return matchesSearch && matchesGeography && matchesStatus;
@@ -155,6 +155,12 @@ function Index() {
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
   const visibleRows = filteredRows.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  useEffect(() => {
+    if (loginStep !== "workspace" || loading || !sheetRef.current) return;
+    const firstDimension = COLUMN_ORDER.indexOf(DIMENSION_FIELDS[0]);
+    sheetRef.current.scrollLeft = COLUMN_ORDER.slice(3, firstDimension).reduce((total, column, index) => total + columnWidth(column, index + 3), 0);
+  }, [loading, loginStep, selectedBatchId]);
 
   const persistParticipants = useCallback((next: Participant[]) => {
     participantsRef.current = next;
@@ -313,7 +319,7 @@ function Index() {
         <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 px-4 py-2 lg:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <img src="/illumine-logo.png" alt="Illumine" className="h-10 w-auto shrink-0 object-contain" />
-            <h1 className="text-sm font-semibold">Zilla T3 Master Trainer Grading</h1>
+            <h1 className="text-sm font-semibold">Trainer Grading tool</h1>
           </div>
           <div className="flex items-center gap-2">
             <span className="hidden items-center gap-1.5 border-r border-border pr-3 text-[11px] text-emerald-700 sm:inline-flex"><span className="size-1.5 rounded-full bg-emerald-500" />{AUTOSAVE_NOTICE}</span>
@@ -324,26 +330,24 @@ function Index() {
       </header>
 
       <section className="mx-auto max-w-[1720px] space-y-5 px-4 py-5 sm:px-6 lg:px-8">
-        <div className="rounded-xl border border-border bg-card px-5 py-4 shadow-sm">
-          <div className="mb-3 flex items-center gap-2 text-xs font-semibold"><Filter className="size-4 text-sky-700" />Find Master trainers <span className="ml-auto text-[11px] font-normal text-muted-foreground">{filteredRows.length} of {batchRows.length} shown</span></div>
+        <div className="rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
           <div className="flex flex-wrap items-center gap-2">
+          <div className="mr-3 flex shrink-0 items-center gap-2 text-xs font-semibold"><Filter className="size-4 text-sky-700" />Find Master trainers</div>
           <div className="flex h-9 w-full max-w-[260px] items-center gap-2 rounded-md border border-input bg-background px-2.5 focus-within:ring-1 focus-within:ring-ring">
             <Search className="size-3.5 shrink-0 text-muted-foreground" />
-            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, userId, phone" aria-label="Search name, userId, or phone" className="h-full border-0 p-0 text-xs shadow-none focus-visible:ring-0" />
+            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search all table values" aria-label="Search all table values" className="h-full border-0 p-0 text-xs shadow-none focus-visible:ring-0" />
           </div>
           {filterSelect("district", filters.District, uniqueOptions("District"), (value) => setFilters((current) => ({ ...current, District: value })))}
           {filterSelect("taluka", filters.Taluka, uniqueOptions("Taluka"), (value) => setFilters((current) => ({ ...current, Taluka: value })))}
           {filterSelect("Assessment status", assessmentStatus, ASSESSMENT_STATUSES, setAssessmentStatus, "All statuses")}
-          <div className="ml-auto flex flex-wrap items-center gap-1.5">
-            <Button variant="outline" size="sm" onClick={exportWorkbook} title="Export the visible rows to Excel"><Download /><span className="hidden md:inline">Excel</span></Button>
-          </div>
+          <span className="ml-auto text-[11px] text-muted-foreground">{filteredRows.length} of {batchRows.length} shown</span>
           </div>
         </div>
 
         <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-        <div className="grid gap-x-5 gap-y-3 border-b border-border px-5 py-3 md:grid-cols-[minmax(0,2fr)_minmax(250px,1fr)] md:items-center">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-3 border-b border-border px-5 py-3">
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold">Master Trainer registry of “{selectedBatch.name}”</h2>
+            <h2 className="text-sm font-semibold">Batch : {selectedBatch.name}</h2>
             <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-[11px]">
               {([
                 ["Batch Date", displayBatchDate(selectedBatch.date)],
@@ -354,13 +358,14 @@ function Index() {
               ] as const).map(([label, value]) => <span key={label} className="whitespace-nowrap"><span className="text-muted-foreground">{label}</span> <strong className="ml-1 font-semibold tabular-nums">{value}</strong></span>)}
             </div>
           </div>
-          <div className="min-w-0 border-t border-border pt-2 md:border-l md:border-t-0 md:py-1 md:pl-5">
+          <div className="min-w-0 border-t border-border pt-2 sm:border-l sm:border-t-0 sm:py-1 sm:pl-5">
             <div className="mb-1.5 flex items-baseline gap-2"><h3 className="text-[11px] font-semibold">Grade distribution</h3><span className="text-[10px] text-muted-foreground">% of graded MTs</span></div>
             <GradeDistribution rows={batchRows} />
           </div>
+          <Button variant="outline" size="sm" className="ml-auto" onClick={exportWorkbook} title="Export the filtered rows to Excel"><Download className="size-4" />Excel</Button>
         </div>
 
-        <div className="sheet-frame relative max-h-[620px] min-h-[440px] overflow-auto bg-background" aria-label="Participant grading spreadsheet">
+        <div ref={sheetRef} className="sheet-frame relative max-h-[620px] min-h-[440px] overflow-auto bg-background" aria-label="Participant grading spreadsheet">
           {loading ? (
             <div className="flex min-h-[400px] items-center justify-center gap-2 text-sm text-muted-foreground"><span className="size-4 animate-spin rounded-full border-2 border-primary border-r-transparent" />Loading demo participant data…</div>
           ) : batchRows.length === 0 ? (
@@ -372,14 +377,17 @@ function Index() {
               <colgroup>{COLUMN_ORDER.map((column, index) => <col key={column} style={{ width: columnWidth(column, index) }} />)}</colgroup>
               <thead>
                 <tr className="group-header-row">
-                  {COLUMN_GROUPS.map((group) => <th key={group.name} colSpan={group.columns.length} scope="colgroup" className="group-header-cell border-b border-r border-border bg-muted px-2 py-1.5 text-[10px] font-semibold uppercase text-muted-foreground">{group.name}</th>)}
+                  {COLUMN_GROUPS.map((group) => group.name === "Participant details" ? <Fragment key={group.name}>
+                    <th colSpan={3} scope="colgroup" className="group-header-cell frozen-group-header border-b border-r border-border bg-muted px-2 py-1.5 text-[10px] font-semibold uppercase text-muted-foreground">{group.name}</th>
+                    <th colSpan={group.columns.length - 3} scope="colgroup" className="group-header-cell border-b border-r border-border bg-muted px-2 py-1.5 text-[10px] font-semibold uppercase text-muted-foreground">{group.name}</th>
+                  </Fragment> : <th key={group.name} colSpan={group.columns.length} scope="colgroup" className="group-header-cell border-b border-r border-border bg-muted px-2 py-1.5 text-[10px] font-semibold uppercase text-muted-foreground">{group.name}</th>)}
                 </tr>
                 <tr className="column-header-row">
                   {COLUMN_ORDER.map((column, index) => (
-                    <th key={column} scope="col" title={column} className={`${frozenClasses(index, true)} border-b border-r border-border bg-card px-2 py-2 align-bottom`}>
-                      <Button variant="ghost" size="sm" className="h-auto min-h-7 w-full justify-start whitespace-normal px-0 py-0 text-left text-[10px] font-semibold leading-tight text-foreground hover:bg-transparent" onClick={() => setSort((current) => current?.field === column ? { field: column, direction: current.direction === "asc" ? "desc" : "asc" } : { field: column, direction: "asc" })} aria-label={`Sort by ${column}`}>
-                        <span>{column}</span>
-                        <span className="ml-auto shrink-0 text-muted-foreground">{sort?.field === column ? sort.direction === "asc" ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" /> : <ArrowUpDown className="size-3 opacity-40" />}</span>
+                    <th key={column} scope="col" title={column} className={`${frozenClasses(index, true)} border-b border-r border-border bg-card px-1.5 py-1.5 align-bottom`}>
+                      <Button variant="ghost" size="sm" className="h-auto min-h-5 w-fit max-w-full justify-start gap-1 whitespace-normal px-0 py-0 text-left text-[9px] font-semibold leading-tight text-foreground hover:bg-transparent" onClick={() => setSort((current) => current?.field === column ? { field: column, direction: current.direction === "asc" ? "desc" : "asc" } : { field: column, direction: "asc" })} aria-label={`Sort by ${column}`}>
+                        <span className="min-w-0">{column}</span>
+                        <span className="shrink-0 text-muted-foreground">{sort?.field === column ? sort.direction === "asc" ? <ArrowUp className="size-2.5" /> : <ArrowDown className="size-2.5" /> : <ArrowUpDown className="size-2.5 opacity-40" />}</span>
                       </Button>
                     </th>
                   ))}
@@ -405,7 +413,7 @@ function Index() {
                         if (column === "Score") return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border bg-muted/30 px-2 py-1 text-center font-semibold tabular-nums`}>{graded.Score === "" ? <span className="text-muted-foreground">—</span> : graded.Score}</td>;
                         if (column === "Participation Status") return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border px-1.5 py-1`}>
                           <Select value={participant["Participation Status"]} onValueChange={(value) => handleCellValue(participant.id, "Participation Status", value)}>
-                            <SelectTrigger id={cellId(participant.id, index)} aria-label={`${participant.Name}, Participation Status`} onKeyDown={(event) => handleGridKey(event, visibleRows, rowIndex, "Participation Status")} className="h-6 w-[104px] rounded-sm border-transparent bg-muted/45 px-1.5 text-[10px] shadow-none"><SelectValue /></SelectTrigger>
+                            <SelectTrigger id={cellId(participant.id, index)} aria-label={`${participant.Name}, Participation Status`} onKeyDown={(event) => handleGridKey(event, visibleRows, rowIndex, "Participation Status")} className="h-6 w-full rounded-sm border-transparent bg-muted/45 px-1.5 text-[10px] shadow-none"><SelectValue /></SelectTrigger>
                             <SelectContent><SelectItem value="Present">Present</SelectItem><SelectItem value="Absent">Absent</SelectItem></SelectContent>
                           </Select>
                         </td>;
@@ -415,14 +423,14 @@ function Index() {
                           const error = errors[`${participant.id}::Recommendation`];
                           return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border px-1.5 py-1 align-top`}>
                             <Select value={participant.Recommendation || "__blank__"} onValueChange={(value) => handleCellValue(participant.id, "Recommendation", value === "__blank__" ? "" : value)}>
-                              <SelectTrigger id={cellId(participant.id, index)} aria-label={`${participant.Name}, Recommendation`} aria-invalid={Boolean(error)} onKeyDown={(event) => handleGridKey(event, visibleRows, rowIndex, "Recommendation")} className={`h-6 w-[158px] rounded-sm px-1.5 text-[10px] shadow-none ${error ? "border-destructive" : "border-transparent bg-muted/45"}`}><SelectValue /></SelectTrigger>
-                              <SelectContent><SelectItem value="__blank__">—</SelectItem><SelectItem value="Recommended as MT">Recommended as MT</SelectItem><SelectItem value="Not Recommended as MT">Not Recommended as MT</SelectItem></SelectContent>
+                              <SelectTrigger id={cellId(participant.id, index)} aria-label={`${participant.Name}, Recommendation`} aria-invalid={Boolean(error)} onKeyDown={(event) => handleGridKey(event, visibleRows, rowIndex, "Recommendation")} className={`h-6 w-full rounded-sm px-1.5 text-[10px] shadow-none ${error ? "border-destructive" : "border-transparent bg-muted/45"} ${participant.Recommendation ? "" : "italic text-slate-400"}`}><SelectValue /></SelectTrigger>
+                              <SelectContent><SelectItem value="__blank__">Select recommendation</SelectItem><SelectItem value="Recommended as MT">Recommended as MT</SelectItem><SelectItem value="Not Recommended as MT">Not Recommended as MT</SelectItem></SelectContent>
                             </Select>
                             {error && <span className="mt-1 block text-[9px] text-destructive" role="alert">{error}</span>}
                           </td>;
                         }
                         if (column === "Comments") return <td key={column} className={`${frozenClasses(index, false)} border-b border-r border-border px-1.5 py-1`}>
-                          <Button id={cellId(participant.id, index)} variant="ghost" size="sm" title={participant.Comments || "Add comments"} aria-label={`${participant.Name}, Comments`} onClick={() => openNotes(participant)} onPaste={(event) => { const text = event.clipboardData.getData("text"); if (pasteGrid(participant.id, "Comments", text)) event.preventDefault(); }} onKeyDown={(event) => handleGridKey(event, visibleRows, rowIndex, "Comments")} className="h-6 w-full min-w-44 justify-start gap-1.5 overflow-hidden rounded-sm px-1.5 text-[10px] font-normal">
+                          <Button id={cellId(participant.id, index)} variant="ghost" size="sm" title={participant.Comments || "Add comments"} aria-label={`${participant.Name}, Comments`} onClick={() => openNotes(participant)} onPaste={(event) => { const text = event.clipboardData.getData("text"); if (pasteGrid(participant.id, "Comments", text)) event.preventDefault(); }} onKeyDown={(event) => handleGridKey(event, visibleRows, rowIndex, "Comments")} className="h-6 w-full min-w-0 justify-start gap-1.5 overflow-hidden rounded-sm px-1.5 text-[10px] font-normal">
                             <MessageSquareText className="size-3 shrink-0 text-muted-foreground" /><span className="truncate text-muted-foreground">{participant.Comments || "Add comment…"}</span>
                           </Button>
                         </td>;
@@ -475,7 +483,7 @@ function LoginScreen({ step, phone, otp, setPhone, setOtp, onContinue, onBack, o
     <main className="flex min-h-screen flex-col bg-background">
       <header className="flex h-14 items-center gap-3 border-b border-border px-5 lg:px-8">
         <img src="/illumine-logo.png" alt="Illumine" className="h-9 w-auto shrink-0 object-contain" />
-        <span className="text-sm font-semibold">Zilla <span className="font-normal text-muted-foreground">/</span> T3 Master Trainer Grading</span>
+        <span className="text-sm font-semibold">Trainer Grading tool</span>
       </header>
       <div className="flex flex-1 items-center justify-center px-4 py-10">
         <form className="w-full max-w-[360px]" onSubmit={(event) => {
@@ -490,7 +498,7 @@ function LoginScreen({ step, phone, otp, setPhone, setOtp, onContinue, onBack, o
         }}>
           <img src="/illumine-logo.png" alt="Illumine" className="mb-7 h-14 w-auto object-contain" />
           {step === "phone" ? <>
-            <p className="mb-2 text-[10px] font-semibold uppercase text-primary">Five-day T3 program</p>
+            <p className="mb-2 text-[10px] font-semibold uppercase text-primary">Five-day T3 program - Train the trainer program</p>
             <h1 className="text-2xl font-semibold">Grader sign in</h1>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">Enter your mobile number to open the Master Trainer assessment register.</p>
             <label htmlFor="demo-phone" className="mb-1.5 mt-7 block text-xs font-medium">Mobile number</label>
@@ -498,18 +506,15 @@ function LoginScreen({ step, phone, otp, setPhone, setOtp, onContinue, onBack, o
             <Button type="submit" className="mt-4 w-full">Continue</Button>
           </> : <>
             <Button type="button" variant="ghost" size="sm" onClick={onBack} className="mb-4 -ml-2 text-muted-foreground"><ChevronLeft />Change number</Button>
-            <p className="mb-2 text-[10px] font-semibold uppercase text-primary">Demo verification</p>
-            <h1 className="text-2xl font-semibold">Enter one-time code</h1>
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">Code step for <span className="font-medium text-foreground">{phone}</span>. This demo accepts any code.</p>
-            <label htmlFor="demo-otp" className="mb-1.5 mt-7 block text-xs font-medium">One-time code</label>
+            <h1 className="text-2xl font-semibold">Enter the OTP</h1>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">Please check the OTP received on your mobile number: <span className="font-medium text-foreground">{phone}</span></p>
+            <label htmlFor="demo-otp" className="mb-1.5 mt-7 block text-xs font-medium">OTP</label>
             <Input id="demo-otp" inputMode="numeric" autoComplete="one-time-code" placeholder="Any code" value={otp} onChange={(event) => setOtp(event.target.value)} className="h-10" />
-            <Button type="submit" className="mt-4 w-full">Choose batch</Button>
+            <Button type="submit" className="mt-4 w-full">Proceed</Button>
           </>}
           {error && <p className="mt-2 text-xs text-destructive" role="alert">{error}</p>}
-          <div className="mt-7 flex gap-2 border-t border-border pt-4 text-xs leading-relaxed text-muted-foreground"><ShieldAlert className="mt-0.5 size-4 shrink-0 text-chart-3" /><p><strong className="font-semibold text-foreground">Demo authentication · not secure.</strong> Any mobile number and any code are accepted. No code is sent or verified.</p></div>
         </form>
       </div>
-      <footer className="border-t border-border px-5 py-3 text-center text-[10px] text-muted-foreground">ZILLAP2IT Illumine trainers <span className="mx-1">·</span> Internal prototype</footer>
     </main>
   );
 }
@@ -522,21 +527,29 @@ function BatchSelectionScreen({ batches, loading, onSelect, onSignOut }: {
 }) {
   const [batchDate, setBatchDate] = useState<string | null>(null);
   const [week, setWeek] = useState(NO_FILTER);
+  const [search, setSearch] = useState("");
   const [calendarOpen, setCalendarOpen] = useState(false);
   const weeks = [...new Set(batches.map((batch) => batch.week).filter((value): value is number => value !== null))].sort((a, b) => a - b);
-  const visibleBatches = batches.filter((batch) => (!batchDate || batch.date === batchDate) && (week === NO_FILTER || batch.week === Number(week)));
+  const visibleBatches = batches.filter((batch) => {
+    if (batchDate && batch.date !== batchDate) return false;
+    if (week !== NO_FILTER && batch.week !== Number(week)) return false;
+    const results = gradeDistribution(batch.rows);
+    const searchable = [batch.name, batch.date, displayBatchDate(batch.date), batch.week === null ? "" : `Week ${batch.week}`, results.total, `${results.graded}/${results.total}`, ...Object.values(results.percentages), ...batch.rows.flatMap((row) => Object.values(row))];
+    return searchable.some((value) => String(value).toLowerCase().includes(search.trim().toLowerCase()));
+  });
   const selectedDate = batchDate ? new Date(`${batchDate}T00:00:00`) : undefined;
   return <main className="min-h-screen bg-slate-50/70 text-foreground">
     <header className="flex min-h-14 items-center gap-3 border-b border-border bg-card px-5 lg:px-8">
       <img src="/illumine-logo.png" alt="Illumine" className="h-9 w-auto shrink-0 object-contain" />
-      <span className="text-sm font-semibold">Zilla T3 Master Trainer Grading</span>
+      <span className="text-sm font-semibold">Trainer Grading tool</span>
       <Button variant="ghost" size="icon" className="ml-auto" aria-label="Sign out of demo" onClick={onSignOut}><LogOut /></Button>
     </header>
     <section className="mx-auto max-w-[1320px] px-5 py-8 sm:px-7 lg:px-10">
-      <h1 className="text-2xl font-semibold tracking-tight">Batches conducted in T3</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Batches conducted in the program</h1>
       <p className="mt-1 text-sm text-muted-foreground">Click on the specific batch to proceed for grading</p>
       <div className="mt-6 rounded-xl border border-border bg-card shadow-sm">
         <div className="flex flex-wrap items-end gap-3 border-b border-border px-5 py-4">
+          <div><label htmlFor="batch-search" className="mb-1.5 block text-xs font-medium">Search</label><div className="flex h-9 w-56 items-center gap-2 rounded-md border border-input px-2.5"><Search className="size-3.5 text-muted-foreground" /><Input id="batch-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search all table values" className="h-full border-0 p-0 text-xs shadow-none focus-visible:ring-0" /></div></div>
           <div>
             <label className="mb-1.5 block text-xs font-medium" htmlFor="batch-date-filter">Batch Date</label>
             <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
@@ -552,15 +565,17 @@ function BatchSelectionScreen({ batches, loading, onSelect, onSignOut }: {
           <span className="ml-auto text-xs text-muted-foreground">{visibleBatches.length} {visibleBatches.length === 1 ? "batch" : "batches"}</span>
         </div>
         <div className="overflow-x-auto">
-          <div className="min-w-[1040px]">
-            <div className="grid grid-cols-[minmax(190px,1.5fr)_130px_120px_145px_130px_minmax(280px,1.8fr)] gap-4 border-b border-border bg-slate-50 px-5 py-3 text-[11px] font-semibold text-slate-600">
-              <span>Batch Name</span><span>Batch Date</span><span>Training Week</span><span>No. of participants</span><span>MTs Graded</span><span>Grading Distribution</span>
+          <div className="min-w-[1260px]">
+            <div className="grid grid-cols-[minmax(160px,1.5fr)_110px_110px_125px_125px_105px_85px_minmax(220px,1.8fr)] gap-3 border-b border-border bg-slate-50 px-5 py-3 text-[11px] font-semibold text-slate-600">
+              <span>Batch Name</span><span>Batch Date</span><span>Coach 1</span><span>Coach 2</span><span>Training Week</span><span>Participants</span><span>MTs Graded</span><span>Grading Distribution</span>
             </div>
             {loading ? <p className="px-5 py-10 text-center text-sm text-muted-foreground">Loading batches…</p> : visibleBatches.length === 0 ? <p className="px-5 py-10 text-center text-sm text-muted-foreground">No batches match these filters.</p> : visibleBatches.map((batch) => {
               const results = gradeDistribution(batch.rows);
-              return <button key={batch.id} type="button" onClick={() => onSelect(batch.id)} aria-label={`Open ${batch.name} for grading`} className="grid w-full grid-cols-[minmax(190px,1.5fr)_130px_120px_145px_130px_minmax(280px,1.8fr)] items-center gap-4 border-b border-border px-5 py-4 text-left text-xs transition-colors last:border-b-0 hover:bg-sky-50/70 focus-visible:bg-sky-50/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-500">
+              return <button key={batch.id} type="button" onClick={() => onSelect(batch.id)} aria-label={`Open ${batch.name} for grading`} className="grid w-full grid-cols-[minmax(160px,1.5fr)_110px_110px_125px_125px_105px_85px_minmax(220px,1.8fr)] items-center gap-3 border-b border-border px-5 py-4 text-left text-xs transition-colors last:border-b-0 hover:bg-sky-50/70 focus-visible:bg-sky-50/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-500">
                 <span className="font-semibold text-slate-900">{batch.name}</span>
                 <span>{displayBatchDate(batch.date)}</span>
+                <span className="truncate" title={[...new Set(batch.rows.map((row) => row["Coach 1"]))].join(", ")}>{[...new Set(batch.rows.map((row) => row["Coach 1"]))].join(", ")}</span>
+                <span className="truncate" title={[...new Set(batch.rows.map((row) => row["Coach 2"]))].join(", ")}>{[...new Set(batch.rows.map((row) => row["Coach 2"]))].join(", ")}</span>
                 <span>{batch.week === null ? "—" : `Week ${batch.week}`}</span>
                 <span className="tabular-nums">{results.total}</span>
                 <span className="font-semibold tabular-nums">{results.graded}/{results.total}</span>
@@ -612,18 +627,21 @@ function participantStatus(participant: Participant) {
 }
 
 function columnWidth(column: string, index: number) {
-  if (index === 0) return 58;
-  if (column === "userId") return 105;
-  if (column === "Name") return 174;
-  if (column === "email") return 210;
-  if (column === "phone") return 130;
-  if (column === "Department" || column === "Designation" || column.startsWith("Cognitive") || column.startsWith("Program") || column.startsWith("MT Assessment")) return 142;
-  if (DIMENSION_FIELDS.includes(column as DimensionField)) return column.length > 32 ? 172 : 142;
-  if (column === "Recommendation") return 170;
-  if (column === "Participation Status") return 126;
-  if (column === "Comments") return 190;
-  if (column === "batchName") return 172;
-  return 112;
+  if (index === 0) return 40;
+  if (column === "userId") return 78;
+  if (column === "Name") return 120;
+  if (column === "email") return 142;
+  if (column === "phone") return 98;
+  if (column === "Department" || column === "Designation") return 100;
+  if (column.startsWith("Cognitive") || column.startsWith("Program") || column.startsWith("MT Assessment")) return 84;
+  if (DIMENSION_FIELDS.includes(column as DimensionField)) return column.length > 32 ? 112 : 88;
+  if (column === "Score") return 62;
+  if (column === "Internal Grade") return 92;
+  if (column === "Recommendation") return 140;
+  if (column === "Participation Status") return 96;
+  if (column === "Comments") return 132;
+  if (column === "batchName") return 118;
+  return 84;
 }
 
 function frozenClasses(index: number, header: boolean) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { COLUMN_ORDER, createDemoParticipants, EDITABLE_FIELDS, gradeDistribution, gradeParticipant, isDimensionValue, trainingWeek, type Participant } from "@/lib/grading";
+import { COLUMN_GROUPS, COLUMN_ORDER, createDemoParticipants, EDITABLE_FIELDS, gradeDistribution, gradeParticipant, isDimensionValue, trainingWeek, type Participant } from "@/lib/grading";
 import { createGradingDataProvider, toAssessmentDraft } from "@/lib/grading-data-provider";
 
 function demoParticipant(index: number): Participant {
@@ -18,6 +18,15 @@ describe("T3 grading rules", () => {
       "Ability to involve the class and listen to participation", "Appreciation of the goal of the program", "In class participation",
       "Inner Confidence", "Appreciation and willingness to follow process", "Score", "Participation Status", "Internal Grade", "Recommendation", "Comments",
     ]);
+  });
+
+  it("groups the grading sheet as requested and seeds 50 Vidarbha trainers", () => {
+    expect(COLUMN_GROUPS.map((group) => group.name)).toEqual([
+      "Participant details", "Batch details", "Assessments", "Dimensions (Please enter a score between 0–5)", "Grading",
+    ]);
+    const vidarbha = createDemoParticipants().filter((row) => row.batchName === "T3 Vidarbha · Jul 2026");
+    expect(vidarbha).toHaveLength(50);
+    expect(new Set(vidarbha.map((row) => row.userId)).size).toBe(50);
   });
 
   it.each([

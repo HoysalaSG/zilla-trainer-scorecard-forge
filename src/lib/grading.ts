@@ -22,16 +22,14 @@ export const GRADE_THRESHOLDS = {
 } as const;
 
 export const COLUMN_GROUPS = [
-  { name: "Participant", columns: ["Sr no.", "userId", "Name"] },
-  { name: "Contact", columns: ["email", "phone"] },
-  { name: "Geography", columns: ["Division", "District", "Taluka", "Department", "Designation"] },
-  { name: "Batch", columns: ["Coach 1", "Coach 2", "batchId", "batchName", "batchDate"] },
+  { name: "Participant details", columns: ["Sr no.", "userId", "Name", "email", "phone", "Division", "District", "Taluka", "Department", "Designation"] },
+  { name: "Batch details", columns: ["Coach 1", "Coach 2", "batchId", "batchName", "batchDate"] },
   {
     name: "Assessments",
     columns: ["Program Assessment 1", "Program Assessment 2", "MT Assessment 1", "MT Assessment 2", "Cognitive Pre", "Cognitive Post"],
   },
-  { name: "Dimensions", columns: [...DIMENSION_FIELDS] },
-  { name: "Grading", columns: ["Score", "Participation Status", "Internal Grade", "Recommendation", "Comments"] },
+  { name: "Dimensions (Please enter a score between 0–5)", columns: [...DIMENSION_FIELDS, "Score", "Participation Status"] },
+  { name: "Grading", columns: ["Internal Grade", "Recommendation", "Comments"] },
 ] as const;
 
 export const COLUMN_ORDER = COLUMN_GROUPS.flatMap((group) => [...group.columns]);
@@ -177,6 +175,18 @@ export function createDemoParticipants(): Participant[] {
       recommendation: personIndex < 4 ? "Recommended as MT" as const : personIndex < 6 ? "Not Recommended as MT" as const : "" as const,
     };
   }));
+  const vidarbhaNames = ["Aditi Patil", "Ramesh Gawande", "Shweta Deshpande", "Vijay Kale", "Snehal More", "Farhan Sheikh", "Kavita Wankhede", "Pranav Rathod", "Nisha Pawar", "Dinesh Jadhav"];
+  const vidarbhaBatch = batchDetails[4];
+  const extraVidarbhaRows = Array.from({ length: 40 }, (_, index) => {
+    const location = vidarbhaBatch.locations[index % vidarbhaBatch.locations.length] ?? vidarbhaBatch.locations[0];
+    return {
+      name: `${vidarbhaNames[index % vidarbhaNames.length]} ${Math.floor(index / vidarbhaNames.length) + 1}`,
+      userId: `MT-${24150 + index}`,
+      division: vidarbhaBatch.division, district: location[0], taluka: location[1], batch: vidarbhaBatch.name,
+      dimensions: profiles[index % profiles.length] ?? ["", "", "", "", "", ""],
+      recommendation: index % profiles.length < 4 ? "Recommended as MT" as const : index % profiles.length < 6 ? "Not Recommended as MT" as const : "" as const,
+    };
+  });
   const batchIds: Record<string, string> = Object.fromEntries(batchDetails.map((batch, index) => [batch.name, `T3-2026-0${index + 1}`]));
   const batchDates: Record<string, string> = {
     "T3 Pune · May 2026": "2026-05-12", "T3 Konkan · Jun 2026": "2026-06-09",
@@ -185,7 +195,7 @@ export function createDemoParticipants(): Participant[] {
   };
   const batchSequence: Record<string, number> = {};
 
-  return [...seedRows, ...additionalRows].map((row, index): Participant => ({
+  return [...seedRows, ...additionalRows, ...extraVidarbhaRows].map((row, index): Participant => ({
     id: row.userId,
     "Sr no.": (batchSequence[row.batch] = (batchSequence[row.batch] ?? 0) + 1),
     userId: row.userId,
